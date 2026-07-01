@@ -101,7 +101,7 @@ firmware/                 PlatformIO project (ESP32-S3)
     touch.*               FT3168 capacitive touch reader
     log.h                 DEBUG_LOG-gated logging macros
     brew_state.h          shared machine-state struct
-    fonts/, logo_lm.h, machine_off.h   generated assets (see "Going public")
+    fonts/, logo_lm.h, machine_off.h   generated assets (git-ignored)
 tools/preflight/          Python: validate cloud access + generate the installation key
 tools/gen_secrets.py      build secrets.h from .env + installation_key.json
 docs/                     PRODUCT.md (this device), plan.md (implementation plan)
@@ -121,18 +121,6 @@ docs/                     PRODUCT.md (this device), plan.md (implementation plan
 **MIT** (see `LICENSE`). All dependencies are permissive — `pylamarzocco` (MIT, the cloud protocol
 reference), Arduino_GFX / ArduinoJson / WiFiManager (MIT), mbedTLS (Apache-2.0), and the Luckiest Guy
 font (Apache-2.0). MIT keeps this project maximally reusable and is compatible with all of them.
-
-## ⚠️ Going public (read before pushing to GitHub)
-
-This repo is built so secrets never leak, but two more things matter for a public release:
-
-- **Trademarked artwork.** `firmware/src/logo_lm.h` (the La Marzocco lion) and
-  `firmware/src/machine_off.h` (the machine illustration) are generated from **La Marzocco's
-  copyrighted/trademarked images** and should **not** be published. They're git-ignored. Builders
-  supply their own and regenerate them — see `docs/PRODUCT.md` → "Generating image assets". (Ask if
-  you want a built-in text-only fallback so the firmware compiles without these headers.)
-- **Not affiliated with La Marzocco.** Make that clear in your repo description; this is an
-  independent, unofficial project using a reverse-engineered cloud API that may change at any time.
 
 ## Credits
 
