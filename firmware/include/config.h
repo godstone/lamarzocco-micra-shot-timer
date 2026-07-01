@@ -52,14 +52,16 @@
 
 // Verbose serial logging ([boot]/[live]/[ws]/[display] etc.). Set to 1 to re-enable.
 #ifndef DEBUG_LOG
-#define DEBUG_LOG 0
+#define DEBUG_LOG 1
 #endif
 
-// Dev-screen "demo on/off" button rectangle (kept inside the round panel).
-#define DEV_BTN_X 140
-#define DEV_BTN_Y 386
-#define DEV_BTN_W 186
-#define DEV_BTN_H 52
+// Dev "actions" page: two big, easy-tap buttons (top = DEMO / CONFIRM, bottom = RESET / CANCEL).
+// Same slots are reused by the reset-confirm modal. Kept inside the round panel.
+#define BTN_X 96
+#define BTN_W 274
+#define BTN_H 66
+#define BTN_A_Y 156  // top button
+#define BTN_B_Y 258  // bottom button
 
 // STARTUP_TEST: on boot, cycle RED/GREEN/BLUE/WHITE + ramp brightness to prove the panel
 // works independent of the UI. Flip to 1 if you ever need to debug the display again.

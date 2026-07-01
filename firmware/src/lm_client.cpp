@@ -189,7 +189,9 @@ static float demoElapsed() {
                            // (avoids fighting the official app for the single connection)
 
 static String g_access, g_refresh;
-static Preferences g_prefs;  // persists last-synced shot counts across reboots / offline
+static Preferences g_prefs;  // persists shot counts + the on-device installation key
+static bool g_haveKey = false;    // an installation key is loaded/generated
+static bool g_registered = false; // the key is registered with the cloud (/auth/init)
 static time_t g_tokenExp = 0;
 static bool g_liveStarted = false;
 static WiFiManager g_wm;
@@ -270,6 +272,30 @@ static bool ensureToken() {
     if (g_access.isEmpty() || now >= g_tokenExp) return signIn();
     if (now >= g_tokenExp - 600) return refreshToken();  // refresh 10 min before expiry
     return true;
+}
+
+// Register this device's generated installation key with the cloud (one-time, POST /auth/init).
+static bool registerClient() {
+    WiFiClientSecure client;
+    client.setInsecure();
+    HTTPClient http;
+    if (!http.begin(client, String(LM_BASE) + "/auth/init")) return false;
+    http.addHeader("Content-Type", "application/json");
+    http.addHeader("X-App-Installation-Id", lmAuthInstallId());
+    http.addHeader("X-Request-Proof", lmAuthProof(lmAuthBaseString()));
+    JsonDocument d;
+    d["pk"] = lmAuthPubKeyB64();
+    String body;
+    serializeJson(d, body);
+    int code = http.POST((uint8_t *)body.c_str(), body.length());
+    http.end();
+    LOGF("[live] register /auth/init -> HTTP %d\n", code);
+    if (code < 200 || code >= 300) {
+        char e[48];
+        snprintf(e, sizeof(e), "register HTTP %d", code);
+        setError(e);
+    }
+    return code >= 200 && code < 300;
 }
 
 // Authenticated GET; returns the body, or empty on failure (clears token on 401).
@@ -642,7 +668,14 @@ static void liveTask(void *) {
                 g_state.ip[0] = 0;
             unlockState();
 
-            if (wifiUp && clockOk) {
+            if (wifiUp && clockOk && g_haveKey && !g_registered) {
+                // Register the on-device key with the cloud (once), before we can sign in.
+                if (registerClient()) {
+                    g_registered = true;
+                    g_prefs.putBool("reg", true);
+                }
+            }
+            if (wifiUp && clockOk && g_registered) {
                 bool tok = ensureToken();
                 lockState();
                 g_state.signedIn = tok;
@@ -706,6 +739,28 @@ static void liveBegin() {
     g_state.shotsTodayDay = g_prefs.getInt("tday", 0);
     unlockState();
 
+    // Installation key: load from flash if present, else generate one on-device (registered
+    // with the cloud later, once online). This replaces the PC pre-flight — fully PC-free.
+    String kid = g_prefs.getString("kid", "");
+    if (kid.length() &&
+        lmAuthBegin(kid.c_str(), g_prefs.getString("ksec", "").c_str(),
+                    g_prefs.getString("kpriv", "").c_str())) {
+        g_haveKey = true;
+        g_registered = g_prefs.getBool("reg", true);
+        LOGF("[live] loaded installation key from flash (registered=%d)\n", g_registered);
+    } else if (lmAuthGenerate()) {
+        g_prefs.putString("kid", lmAuthInstallId());
+        g_prefs.putString("ksec", lmAuthSecretB64());
+        g_prefs.putString("kpriv", lmAuthPrivKeyB64());
+        g_prefs.putBool("reg", false);
+        g_haveKey = true;
+        g_registered = false;
+        LOGF("[live] generated new installation key %s\n", lmAuthInstallId().c_str());
+    } else {
+        LOGLN("[live] installation key setup FAILED");
+        setError("key gen failed");
+    }
+
     WiFi.onEvent([](WiFiEvent_t e, WiFiEventInfo_t info) {
         if (e == ARDUINO_EVENT_WIFI_STA_DISCONNECTED)
             LOGF("[live] wifi disconnected, reason=%d\n",
@@ -738,9 +793,7 @@ static void liveBegin() {
     LOGF("[live] wifi %s; portal %s\n", ok ? "connected" : "not yet",
                   g_wm.getConfigPortalActive() ? "OPEN (join " WIFI_PORTAL_AP ")" : "closed");
 
-    bool keyOk = lmAuthBegin(LM_INSTALLATION_ID, LM_SECRET_B64, LM_PRIVATE_KEY_B64);
-    LOGF("[live] auth key %s\n", keyOk ? "loaded" : "FAILED");
-    if (!keyOk) setError("bad install key");
+    // (installation key already loaded/generated above)
 
     // Poll on core 0 so TLS latency never stutters the UI rendering on core 1.
     xTaskCreatePinnedToCore(liveTask, "lm_live", 16384, nullptr, 1, nullptr, 0);
@@ -791,4 +844,12 @@ void lmSetDemo(bool enabled) {
         strncpy(g_state.status, "Off", sizeof(g_state.status));
     }
     unlockState();
+}
+
+void lmFactoryReset() {
+#ifdef HAVE_SECRETS
+    g_wm.resetSettings();          // clear stored WiFi credentials
+    g_prefs.clear();               // clear installation key + shot stats (+ future creds)
+    WiFi.disconnect(true, true);   // erase persisted WiFi config
+#endif
 }

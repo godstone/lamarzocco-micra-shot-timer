@@ -6,6 +6,7 @@
 
 #include "mbedtls/base64.h"
 #include "mbedtls/ctr_drbg.h"
+#include "mbedtls/ecp.h"
 #include "mbedtls/entropy.h"
 #include "mbedtls/pk.h"
 #include "mbedtls/sha256.h"
@@ -14,8 +15,21 @@ static mbedtls_pk_context g_pk;
 static mbedtls_entropy_context g_entropy;
 static mbedtls_ctr_drbg_context g_ctr;
 static uint8_t g_secret[32];
-static String g_installId;
+static String g_installId, g_secretB64, g_privB64, g_pubB64, g_baseString;
 static bool g_ready = false;
+static bool g_rngReady = false;
+
+static bool ensureRng() {
+    if (g_rngReady) return true;
+    mbedtls_entropy_init(&g_entropy);
+    mbedtls_ctr_drbg_init(&g_ctr);
+    const char *seed = "lamarzocco-display";
+    if (mbedtls_ctr_drbg_seed(&g_ctr, mbedtls_entropy_func, &g_entropy, (const uint8_t *)seed,
+                              strlen(seed)) != 0)
+        return false;
+    g_rngReady = true;
+    return true;
+}
 
 // Base64-encode into a String.
 static String b64(const uint8_t *data, size_t len) {
@@ -66,13 +80,8 @@ static String makeProof(const String &base) {
 }
 
 bool lmAuthBegin(const char *installId, const char *secretB64, const char *privKeyDerB64) {
+    if (!ensureRng()) return false;
     mbedtls_pk_init(&g_pk);
-    mbedtls_entropy_init(&g_entropy);
-    mbedtls_ctr_drbg_init(&g_ctr);
-    const char *seed = "lamarzocco-display";
-    if (mbedtls_ctr_drbg_seed(&g_ctr, mbedtls_entropy_func, &g_entropy, (const uint8_t *)seed,
-                              strlen(seed)) != 0)
-        return false;
 
     size_t olen = 0;
     if (mbedtls_base64_decode(g_secret, sizeof(g_secret), &olen, (const uint8_t *)secretB64,
@@ -90,9 +99,55 @@ bool lmAuthBegin(const char *installId, const char *secretB64, const char *privK
         return false;
 
     g_installId = installId;
+    g_secretB64 = secretB64;
+    g_privB64 = privKeyDerB64;
     g_ready = true;
     return true;
 }
+
+bool lmAuthGenerate() {
+    if (!ensureRng()) return false;
+    mbedtls_pk_init(&g_pk);
+    if (mbedtls_pk_setup(&g_pk, mbedtls_pk_info_from_type(MBEDTLS_PK_ECKEY)) != 0) return false;
+    if (mbedtls_ecp_gen_key(MBEDTLS_ECP_DP_SECP256R1, mbedtls_pk_ec(g_pk),
+                            mbedtls_ctr_drbg_random, &g_ctr) != 0)
+        return false;
+
+    uint8_t buf[400];
+    int len = mbedtls_pk_write_key_der(&g_pk, buf, sizeof(buf));  // written at the END of buf
+    if (len < 0) return false;
+    g_privB64 = b64(buf + sizeof(buf) - len, len);
+
+    uint8_t pbuf[300];
+    int plen = mbedtls_pk_write_pubkey_der(&g_pk, pbuf, sizeof(pbuf));
+    if (plen < 0) return false;
+    uint8_t *pub = pbuf + sizeof(pbuf) - plen;
+    g_pubB64 = b64(pub, plen);
+
+    g_installId = uuid4();
+
+    // secret = sha256(installId . b64(pubDer) . b64(sha256(installId)))
+    uint8_t ih[32];
+    mbedtls_sha256((const uint8_t *)g_installId.c_str(), g_installId.length(), ih, 0);
+    String triple = g_installId + "." + g_pubB64 + "." + b64(ih, 32);
+    mbedtls_sha256((const uint8_t *)triple.c_str(), triple.length(), g_secret, 0);
+    g_secretB64 = b64(g_secret, 32);
+
+    // base string for the registration proof = installId . b64(sha256(pubDer))
+    uint8_t ph[32];
+    mbedtls_sha256(pub, plen, ph, 0);
+    g_baseString = g_installId + "." + b64(ph, 32);
+
+    g_ready = true;
+    return !g_privB64.isEmpty() && !g_pubB64.isEmpty();
+}
+
+String lmAuthInstallId() { return g_installId; }
+String lmAuthSecretB64() { return g_secretB64; }
+String lmAuthPrivKeyB64() { return g_privB64; }
+String lmAuthPubKeyB64() { return g_pubB64; }
+String lmAuthBaseString() { return g_baseString; }
+String lmAuthProof(const String &base) { return makeProof(base); }
 
 bool lmAuthHeaders(LmSignedHeaders &out) {
     if (!g_ready) return false;

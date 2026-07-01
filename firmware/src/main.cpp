@@ -15,7 +15,14 @@ static uint32_t g_frozenAt = 0;  // millis() when the shot ended
 
 // Develop mode: toggled by a two-finger touch; shows a diagnostics overlay.
 static bool g_dev = false;
+static int g_devPage = 0;          // 0 = diagnostics, 1 = actions
+static bool g_confirmReset = false;  // reset-confirmation modal shown
+static bool g_devRedraw = true;      // force a dev re-render
 static uint32_t g_lastDevRender = 0;
+
+static bool inRect(int x, int y, int rx, int ry, int rw, int rh) {
+    return x >= rx && x <= rx + rw && y >= ry && y <= ry + rh;
+}
 #define IDLE_PAGES 2  // swipe carousel: 0 = status (off/readiness), 1 = stats
 
 static int g_idleScreen = -1;  // last rendered screen id; -1 forces redraw
@@ -33,6 +40,7 @@ static uint32_t g_galleryLastRenderMs = 0;
 // Render the swipe-selected gallery page with its own looping animation.
 static void renderGallery(uint32_t now) {
     displaySetPageIndicator(g_galleryPage, GALLERY_PAGES);
+    displaySetConn(((now / 3000) % 2) == 0 ? 1 : 2);  // demo: alternate websocket/cloud icons
     bool pageChanged = (g_galleryPage != g_galleryLastPage);
     float t = (now - g_galleryAnimBase) / 1000.0f;
 
@@ -195,11 +203,16 @@ void loop() {
         swStartY = ty;
         swiped = false;
     }
-    if (down && !swiped && !g_dev) {
+    if (down && !swiped) {
         int dx = tx - swStartX, dy = ty - swStartY;
         if (abs(dx) > 55 && abs(dx) > abs(dy)) {
             int dir = (dx < 0) ? 1 : -1;  // swipe left = next (flick current screen away)
-            if (lmDemo()) {  // gallery: 4-page loop
+            if (g_dev) {  // dev: 2-page loop (diagnostics <-> actions)
+                if (!g_confirmReset) {
+                    g_devPage = (g_devPage + dir + 2) % 2;
+                    g_devRedraw = true;
+                }
+            } else if (lmDemo()) {  // gallery: 4-page loop
                 g_galleryPage = (g_galleryPage + dir + GALLERY_PAGES) % GALLERY_PAGES;
                 g_galleryLastPage = -1;     // force redraw
                 g_galleryAnimBase = now;    // restart the new page's animation cleanly
@@ -213,18 +226,37 @@ void loop() {
     }
     if (!down) swiped = false;
 
-    // DEMO button: toggle on press with an INSTANT redraw, then debounce. Generous hit-box
-    // (measured taps land ~y450, low vs. the drawn button); nothing else is tappable there.
-    if (rising && g_dev && tx >= DEV_BTN_X - 30 && tx <= DEV_BTN_X + DEV_BTN_W + 30 &&
-        ty >= DEV_BTN_Y - 25 && ty <= DEV_BTN_Y + DEV_BTN_H + 45) {
-        lmSetDemo(!lmDemo());
-        displayDevInfo(lmState(), 1, lmDemo());  // immediate feedback
-        g_lastDevRender = now;
-        delay(180);  // debounce the press
-        return;
+    // Dev-mode button taps (targets depend on the page / modal). Big hit-boxes (+12px).
+    bool tapConsumed = false;
+    if (rising && g_dev) {
+        const int M = 12;
+        bool a = inRect(tx, ty, BTN_X - M, BTN_A_Y - M, BTN_W + 2 * M, BTN_H + 2 * M);
+        bool b = inRect(tx, ty, BTN_X - M, BTN_B_Y - M, BTN_W + 2 * M, BTN_H + 2 * M);
+        if (g_confirmReset) {
+            if (a) {  // CONFIRM reset
+                displaySplash("RESETTING", "");
+                lmFactoryReset();
+                delay(400);
+                ESP.restart();
+            } else if (b) {  // CANCEL
+                g_confirmReset = false;
+                g_devRedraw = true;
+            }
+            tapConsumed = true;  // modal swallows all taps (no accidental close)
+        } else if (g_devPage == 1) {
+            if (a) {  // DEMO toggle
+                lmSetDemo(!lmDemo());
+                g_devRedraw = true;
+                tapConsumed = true;
+            } else if (b) {  // RESET -> confirm
+                g_confirmReset = true;
+                g_devRedraw = true;
+                tapConsumed = true;
+            }
+        }
     }
 
-    if (rising) {
+    if (rising && !tapConsumed) {
         tapCount = (now - lastTapMs < 800) ? tapCount + 1 : 1;
         lastTapMs = now;
     }
@@ -236,25 +268,36 @@ void loop() {
     }
 
     if (!g_dev) {
-        // long-press to open
+        // long-press to open dev mode
         if (down && !longFired && now - pressStart >= 1500) {
             g_dev = true;
+            g_devPage = 0;
+            g_confirmReset = false;
+            g_devRedraw = true;
             longFired = true;
             tapCount = 0;
         }
-    } else if (tapCount >= 2) {
-        // double-tap to close
+    } else if (!g_confirmReset && tapCount >= 2) {
+        // double-tap to close (disabled while the reset modal is up)
         g_dev = false;
         tapCount = 0;
         repaintCurrent();
     }
 
     if (g_dev) {
-        if (now - g_lastDevRender > 250) {
-            displayDevInfo(lmState(), down ? 1 : 0, lmDemo());
+        bool anim = (g_devPage == 0 && !g_confirmReset);  // info page refreshes live values
+        if (g_devRedraw || (anim && now - g_lastDevRender > 250)) {
+            displaySetPageIndicator(g_devPage, 2);
+            if (g_confirmReset)
+                displayResetConfirm();
+            else if (g_devPage == 1)
+                displayDevActions(lmDemo());
+            else
+                displayDevInfo(lmState(), down ? 1 : 0, lmDemo());
             g_lastDevRender = now;
+            g_devRedraw = false;
         }
-        delay(33);
+        delay(20);
         return;
     }
 

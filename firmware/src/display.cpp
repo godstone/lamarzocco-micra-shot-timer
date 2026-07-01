@@ -113,6 +113,13 @@ static void drawProgressArc(int cx, int cy, int rOut, int rIn, float frac, uint1
     }
 }
 
+// Big rounded button with a centered label (double outline for weight).
+static void drawButton(int x, int y, int w, int h, const char *label, uint16_t color) {
+    canvas->drawRoundRect(x, y, w, h, 14, color);
+    canvas->drawRoundRect(x + 1, y + 1, w - 2, h - 2, 13, color);
+    drawCenteredClassic(label, y + h / 2, 3, color);
+}
+
 // Gallery-style page dots near the bottom; the active page is a filled dot.
 static void drawPageDots() {
     if (g_pageCount <= 1) return;
@@ -127,11 +134,11 @@ static void drawPageDots() {
     }
 }
 
-// Small center-bottom connection icon (only when page dots aren't shown, i.e. live screens):
-// lightning bolt = realtime websocket, cloud = REST fallback.
+// Small connection icon at the top center: lightning bolt = realtime websocket,
+// cloud = REST fallback. Hidden when the mode is 0 (no connection).
 static void drawConnIcon() {
-    if (g_pageCount > 1 || g_connMode == 0) return;  // dots take this spot in demo; none = hide
-    int cx = canvas->width() / 2, y = 432;
+    if (g_connMode == 0) return;  // none = hide; otherwise sits at the top center
+    int cx = canvas->width() / 2, y = 40;
     if (g_connMode == 1) {  // websocket — lightning bolt (realtime/instant)
         uint16_t c = gfx->color565(120, 210, 175);  // mint
         canvas->fillTriangle(cx + 3, y - 8, cx - 4, y + 2, cx + 1, y + 1, c);
@@ -360,12 +367,29 @@ void displayDevInfo(const BrewState &s, int touchPoints, bool demoEnabled) {
         line("err:    none", green);
     }
 
-    // Tappable DEMO on/off button.
-    uint16_t bcol = demoEnabled ? green : COL_DIM;
-    canvas->drawRoundRect(DEV_BTN_X, DEV_BTN_Y, DEV_BTN_W, DEV_BTN_H, 12, bcol);
-    canvas->drawRoundRect(DEV_BTN_X + 1, DEV_BTN_Y + 1, DEV_BTN_W - 2, DEV_BTN_H - 2, 11, bcol);
-    drawCenteredClassic(demoEnabled ? "DEMO ON" : "DEMO OFF", DEV_BTN_Y + DEV_BTN_H / 2, 3, bcol);
+    drawPageDots();  // 2 dev pages: info + actions
+    canvas->flush();
+}
 
+void displayDevActions(bool demoEnabled) {
+    uint16_t green = gfx->color565(120, 200, 165);
+    uint16_t amber = gfx->color565(255, 150, 60);
+    canvas->fillScreen(COL_BG);
+    drawCentered("DEV", 74, &LuckiestGuy36pt7b, COL_LM_RED);
+    drawButton(BTN_X, BTN_A_Y, BTN_W, BTN_H, demoEnabled ? "DEMO ON" : "DEMO OFF",
+               demoEnabled ? green : COL_DIM);
+    drawButton(BTN_X, BTN_B_Y, BTN_W, BTN_H, "RESET DEVICE", amber);
+    drawPageDots();
+    canvas->flush();
+}
+
+void displayResetConfirm() {
+    uint16_t red = gfx->color565(230, 60, 50);
+    canvas->fillScreen(COL_BG);
+    drawCenteredClassic("RESET DEVICE?", 92, 3, red);
+    drawCenteredClassic("clears WiFi + LM account", 132, 2, COL_DIM);
+    drawButton(BTN_X, BTN_A_Y, BTN_W, BTN_H, "CONFIRM", red);
+    drawButton(BTN_X, BTN_B_Y, BTN_W, BTN_H, "CANCEL", COL_FG);
     canvas->flush();
 }
 

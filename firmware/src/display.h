@@ -15,9 +15,14 @@ void displaySetConn(int mode);
 // Startup brand screen: the La Marzocco logo in brand red on black.
 void displayLogo();
 
-// Develop mode: diagnostics overlay (mode, wifi/cloud connection, status, errors, heap, touch)
-// plus a tappable DEMO on/off button.
+// Develop mode page 1: diagnostics overlay (mode, wifi/ip/signin/cloud/status/heap/touch/err).
 void displayDevInfo(const BrewState &s, int touchPoints, bool demoEnabled);
+
+// Develop mode page 2: big DEMO toggle + RESET buttons.
+void displayDevActions(bool demoEnabled);
+
+// Reset confirmation modal: CONFIRM / CANCEL.
+void displayResetConfirm();
 
 // Idle / on-hold: screen fully dark.
 void displayDark();

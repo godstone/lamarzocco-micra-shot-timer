@@ -20,3 +20,6 @@ float lmElapsedSeconds();
 // Runtime demo toggle (exposed on the dev screen). In a LIVE build these are no-ops/false.
 void lmSetDemo(bool enabled);
 bool lmDemo();
+
+// Wipe WiFi + LM cloud/key settings so the device onboards fresh. Caller should restart after.
+void lmFactoryReset();
