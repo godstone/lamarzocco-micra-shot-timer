@@ -1,0 +1,5 @@
+# Pin pylamarzocco so the firmware port targets a known request-signing implementation.
+# If sign-in fails after a library update, check util/_authentication.py for protocol changes.
+pylamarzocco==2.2.5
+aiohttp>=3.9
+python-dotenv>=1.0

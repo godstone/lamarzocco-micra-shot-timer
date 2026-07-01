@@ -1,0 +1,68 @@
+// Tunable behaviour for the brew-timer display.
+#pragma once
+
+// How often to poll the La Marzocco cloud dashboard (ms). Start conservative (2000-5000)
+// and tighten toward 1000 once you've confirmed there's no throttling.
+#ifndef POLL_INTERVAL_MS
+#define POLL_INTERVAL_MS 1500
+#endif
+
+// Display frame refresh while brewing (ms) — the timer counts up locally between polls.
+#define TIMER_REFRESH_MS 100
+
+// Panel brightness 0-255. AMOLED is very bright; ~140 is comfortable indoors.
+#ifndef DISPLAY_BRIGHTNESS
+#define DISPLAY_BRIGHTNESS 140
+#endif
+
+// Screen rotation 0-3 (software, done on the canvas — the CO5300 has no HW rotation).
+// 0 = cable on the left. Use 1 or 3 to put the cable at the bottom/top; 2 = flip 180.
+#define DISPLAY_ROTATION 1
+
+// Seconds for the coffee-fill animation to rise from empty (bottom) to full (top).
+#define COFFEE_FILL_SECONDS 30.0f
+
+// After the cup is full, seconds of over-extraction over which the coffee washes out to a
+// pale "watery" tone and the timer shifts white -> amber -> red (over-extraction warning).
+#define OVEREXTRACT_SECONDS 15.0f
+
+// After a shot ends, freeze the final time + filled cup on screen for this long, then go dark.
+#define POST_SHOT_HOLD_MS 15000
+
+// NTP — needed for TLS cert validity and to compute elapsed = now - brewingStartTime.
+#define NTP_SERVER "pool.ntp.org"
+#define GMT_OFFSET_SEC 0
+#define DAYLIGHT_OFFSET_SEC 0
+
+// LIVE mode: how often the background task polls the cloud dashboard (ms). The timer counts
+// up locally between polls, so this only bounds brew-start detection latency.
+#define LIVE_POLL_INTERVAL_MS 2000
+// LM_TIMEZONE (for the "shots today" trend query) comes from .env -> secrets.h; lm_client.cpp
+// provides a default if it's not set there.
+
+// Calibration: seconds subtracted from the live shot timer to match the official app
+// (e.g. the machine's brewingStartTime includes pre-infusion). Positive = show less time.
+#define LIVE_TIMER_OFFSET_S 0.0f
+
+// DEMO_MODE is set in platformio.ini. When 1, lm_client fakes a brew every few seconds so
+// the display can be developed/verified without any cloud credentials.
+#ifndef DEMO_MODE
+#define DEMO_MODE 1
+#endif
+
+// Verbose serial logging ([boot]/[live]/[ws]/[display] etc.). Set to 1 to re-enable.
+#ifndef DEBUG_LOG
+#define DEBUG_LOG 0
+#endif
+
+// Dev-screen "demo on/off" button rectangle (kept inside the round panel).
+#define DEV_BTN_X 140
+#define DEV_BTN_Y 386
+#define DEV_BTN_W 186
+#define DEV_BTN_H 52
+
+// STARTUP_TEST: on boot, cycle RED/GREEN/BLUE/WHITE + ramp brightness to prove the panel
+// works independent of the UI. Flip to 1 if you ever need to debug the display again.
+#ifndef STARTUP_TEST
+#define STARTUP_TEST 0
+#endif

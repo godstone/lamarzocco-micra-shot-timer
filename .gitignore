@@ -1,0 +1,36 @@
+# ── Secrets — NEVER commit credentials, tokens, or keys ──────────────────────
+# La Marzocco account login + machine serial (compile-time config)
+firmware/include/secrets.h
+# Pre-flight: account login, generated installation key (EC private key!), API dumps
+tools/preflight/.env
+tools/preflight/installation_key.json
+tools/preflight/dashboard_*.json
+# Any stray key / cert material
+*.pem
+*.key
+*_secret*
+*.env
+.env
+
+# ── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# ── PlatformIO / build artifacts ─────────────────────────────────────────────
+firmware/.pio/
+.pio/
+*.bin
+*.elf
+
+# ── Trademarked artwork — do NOT publish (La Marzocco logo / machine image) ──
+# Generated from copyrighted/trademarked assets; each builder supplies their own.
+firmware/src/logo_lm.h
+firmware/src/machine_off.h
+*.svg
+
+# ── Editor / OS ──────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+.DS_Store
