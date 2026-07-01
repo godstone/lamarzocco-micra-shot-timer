@@ -34,3 +34,6 @@ firmware/src/machine_off.h
 .vscode/
 .idea/
 .DS_Store
+
+# render_mockups.py font cache
+tools/.cache/

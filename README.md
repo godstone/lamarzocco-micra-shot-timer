@@ -4,7 +4,18 @@ A standalone **LilyGO T-Display-S3-AMOLED 1.43"** (ESP32-S3, round 466×466 AMOL
 realtime shot timer and machine status of a **La Marzocco Linea Micra** (newest Gateway v5+
 firmware) — a fancy, glanceable companion to the official La Marzocco Home app.
 
-<!-- Add a photo/gif of the device here -->
+## Screenshots
+
+Stylized renders of the on-device screens (round 466×466 panel). Regenerate with
+[`tools/render_mockups.py`](tools/render_mockups.py).
+
+| Brewing | Pre-infusion | Over-extraction |
+|:---:|:---:|:---:|
+| ![Brewing](docs/screenshots/01-brewing.png) | ![Pre-infusion](docs/screenshots/02-preinfusion.png) | ![Over-extraction](docs/screenshots/03-overextraction.png) |
+| **Readiness** | **Shot stats** | **Machine off** |
+| ![Readiness](docs/screenshots/04-readiness.png) | ![Stats](docs/screenshots/05-stats.png) | ![Machine off](docs/screenshots/06-machine-off.png) |
+| **Dev · actions** | **Dev · diagnostics** | **Dev · reset confirm** |
+| ![Dev actions](docs/screenshots/07-dev-actions.png) | ![Dev info](docs/screenshots/08-dev-info.png) | ![Reset confirm](docs/screenshots/09-reset-confirm.png) |
 
 ## Features
 
