@@ -6,8 +6,8 @@
 
 #include <cstddef>
 
-#define BOOTLOG_LINES 14  // console keeps the most recent lines
-#define BOOTLOG_COLS 27   // longer lines are truncated to fit the round panel
+#define BOOTLOG_LINES 14  // console keeps the most recent rows
+#define BOOTLOG_COLS 28   // row width; longer lines wrap onto up to 3 indented rows
 
 void bootlogInit();               // load the persisted toggle; call FIRST in setup()
 bool bootlogEnabled();            // persisted toggle (shown on the dev actions page)

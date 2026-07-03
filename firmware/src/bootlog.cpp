@@ -45,21 +45,46 @@ bool bootlogTakeDirty() {
 
 void bootlogSetInline(bool on) { g_inline = on; }
 
-void bootlogAdd(const char *line) {
-    if (!g_active || !line) return;
-    while (*line == '\n' || *line == '\r') line++;  // strip the leading blank of banners
-    if (!*line) return;
-
-    char tmp[BOOTLOG_COLS + 1];
-    int n = 0;
-    for (; n < BOOTLOG_COLS && line[n] && line[n] != '\n' && line[n] != '\r'; n++) tmp[n] = line[n];
-    tmp[n] = 0;
-
+static void pushRow(const char *s, int n) {
     portENTER_CRITICAL(&g_mux);
-    memcpy(g_buf[g_head], tmp, n + 1);
+    memcpy(g_buf[g_head], s, n);
+    g_buf[g_head][n] = 0;
     g_head = (g_head + 1) % BOOTLOG_LINES;
     if (g_used < BOOTLOG_LINES) g_used++;
     portEXIT_CRITICAL(&g_mux);
+}
+
+void bootlogAdd(const char *line) {
+    if (!g_active || !line) return;
+    while (*line == '\n' || *line == '\r') line++;  // strip the leading blank of banners
+
+    // One log line -> up to 3 console rows: wrap at the last space that fits (so an IP or
+    // status word is never split mid-value); continuation rows are indented two columns.
+    char row[BOOTLOG_COLS + 1];
+    int rows = 0;
+    const char *p = line;
+    while (*p && *p != '\n' && *p != '\r' && rows < 3) {
+        int indent = rows ? 2 : 0;
+        int cap = BOOTLOG_COLS - indent;
+        int len = 0;
+        while (len < cap && p[len] && p[len] != '\n' && p[len] != '\r') len++;
+        int take = len, skip = 0;
+        if (len == cap && p[len] && p[len] != '\n' && p[len] != '\r') {
+            for (int i = len; i > cap / 2; i--)
+                if (p[i - 1] == ' ') {
+                    take = i - 1;
+                    skip = 1;
+                    break;
+                }
+        }
+        if (take == 0) break;
+        memset(row, ' ', indent);
+        memcpy(row + indent, p, take);
+        pushRow(row, indent + take);
+        p += take + skip;
+        rows++;
+    }
+    if (!rows) return;
     g_dirty = true;
 
     // Immediate redraw during the single-threaded boot phase. liveTask (core 0) must never

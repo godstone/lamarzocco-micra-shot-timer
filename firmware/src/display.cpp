@@ -398,7 +398,7 @@ void displayBootlog() {
     canvas->setTextColor(COL_FG);
     int y = 92;
     for (int i = 0; i < n; i++) {
-        canvas->setCursor(70, y);
+        canvas->setCursor(66, y);
         canvas->print(lines[i]);
         y += 22;
     }
