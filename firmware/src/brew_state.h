@@ -35,6 +35,10 @@ struct BrewState {
     bool preInfusionOn = false;
     float preInfusionSec = 0;
 
+    // Backflush cleaning (CMBackFlush widget). 0=Off, 1=Requested, 2=Cleaning.
+    int backflushStatus = 0;
+    uint64_t lastCleaningStartMs = 0;  // epoch ms of the last cleaning start (0 = unknown)
+
     // Current live data path (for the connection icon): 0=none, 1=websocket, 2=cloud/REST.
     int connMode = 0;
 };

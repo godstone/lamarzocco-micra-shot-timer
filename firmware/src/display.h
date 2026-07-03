@@ -24,6 +24,9 @@ void displayDevActions(bool demoEnabled);
 // Reset confirmation modal: CONFIRM / CANCEL.
 void displayResetConfirm();
 
+// Backflush / cleaning screen. ui: 0=idle (START), 1=confirm, 2=running, 3=done.
+void displayBackflush(const BrewState &s, int ui);
+
 // Idle / on-hold: screen fully dark.
 void displayDark();
 

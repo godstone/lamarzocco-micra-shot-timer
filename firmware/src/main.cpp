@@ -23,16 +23,21 @@ static uint32_t g_lastDevRender = 0;
 static bool inRect(int x, int y, int rx, int ry, int rw, int rh) {
     return x >= rx && x <= rx + rw && y >= ry && y <= ry + rh;
 }
-#define IDLE_PAGES 2  // swipe carousel: 0 = status (off/readiness), 1 = stats
+#define IDLE_PAGES 3  // swipe carousel: 0 = status (off/readiness), 1 = stats, 2 = backflush
 
 static int g_idleScreen = -1;  // last rendered screen id; -1 forces redraw
 static long g_idleData = -1;
-static int g_idlePage = 0;  // 0 = status page (machine-off or readiness), 1 = stats
+static int g_idlePage = 0;  // 0 = status page (machine-off or readiness), 1 = stats, 2 = backflush
 static uint32_t g_idleLastRender = 0;
 
-// Demo gallery: a manual, looping carousel of all four screens (decoupled from machine state).
-#define GALLERY_PAGES 4
-static int g_galleryPage = 0;  // 0=off, 1=timer, 2=shot, 3=stats
+// Backflush page UI state: 0 = idle/START, 1 = confirm modal, 2 = running/started, 3 = done.
+static int g_bfUi = 0;
+static uint32_t g_bfReqAt = 0, g_bfDoneAt = 0;
+static bool g_bfSeen = false;  // saw the cycle actually run (for the Cleaning->Off "done" edge)
+
+// Demo gallery: a manual, looping carousel of all screens (decoupled from machine state).
+#define GALLERY_PAGES 5
+static int g_galleryPage = 0;  // 0=off, 1=timer, 2=shot, 3=stats, 4=backflush
 static int g_galleryLastPage = -1;
 static uint32_t g_galleryAnimBase = 0;
 static uint32_t g_galleryLastRenderMs = 0;
@@ -74,6 +79,14 @@ static void renderGallery(uint32_t now) {
         case 3:  // stats (static)
             if (pageChanged) displayStats(lmState().shotsToday, lmState().shotsTotal);
             break;
+        case 4: {  // backflush cleaning (looping spinner)
+            BrewState v;
+            v.connected = true;
+            v.backflushStatus = 2;  // Cleaning
+            strncpy(v.status, "StandBy", sizeof(v.status));
+            displayBackflush(v, 2);
+            break;
+        }
     }
     g_galleryLastPage = g_galleryPage;
 }
@@ -121,12 +134,29 @@ static void renderIdle() {
             g_idleScreen = 1;
             g_idleData = -2;
         }
-    } else {  // stats page
+    } else if (g_idlePage == 1) {  // stats page
         long key = (long)s.shotsToday * 1000000L + s.shotsTotal;
         if (g_idleScreen != 3 || g_idleData != key) {
             displayStats(s.shotsToday, s.shotsTotal);
             g_idleScreen = 3;
             g_idleData = key;
+        }
+    } else {  // backflush / cleaning page
+        bool running = (g_bfUi == 2 || s.backflushStatus != 0);
+        if (running) {  // animate the spinner
+            if (now - g_idleLastRender >= 120) {
+                displayBackflush(s, g_bfUi);
+                g_idleLastRender = now;
+                g_idleScreen = 4;
+                g_idleData = -1;  // force a redraw when it later goes static
+            }
+        } else {
+            long key = (long)g_bfUi * 100 + (s.status[0] == 'O' ? 1 : 0);  // ui + off/on
+            if (g_idleScreen != 4 || g_idleData != key) {
+                displayBackflush(s, g_bfUi);
+                g_idleScreen = 4;
+                g_idleData = key;
+            }
         }
     }
 }
@@ -170,6 +200,28 @@ void loop() {
         g_idleScreen = -1;
     }
     prevOff = offNow;
+
+    // Backflush lifecycle: once started, watch the cloud status to show a brief DONE screen when
+    // the cycle finishes (Cleaning -> Off), or give up if it never starts.
+    {
+        int bf = lmState().backflushStatus;
+        if (g_bfUi == 2) {
+            if (bf != 0) {
+                g_bfSeen = true;  // the cycle actually began
+            } else if (g_bfSeen) {
+                g_bfUi = 3;  // Cleaning -> Off = finished
+                g_bfDoneAt = now;
+                g_bfSeen = false;
+                g_idleScreen = -1;
+            } else if (now - g_bfReqAt > 20000) {
+                g_bfUi = 0;  // command never took effect — back to idle
+                g_idleScreen = -1;
+            }
+        } else if (g_bfUi == 3 && now - g_bfDoneAt > 4000) {
+            g_bfUi = 0;
+            g_idleScreen = -1;
+        }
+    }
 
     // Entering demo mode -> start the gallery on page 0 for a consistent order.
     static bool prevDemo = false;
@@ -216,7 +268,7 @@ void loop() {
                 g_galleryPage = (g_galleryPage + dir + GALLERY_PAGES) % GALLERY_PAGES;
                 g_galleryLastPage = -1;     // force redraw
                 g_galleryAnimBase = now;    // restart the new page's animation cleanly
-            } else {  // real idle: 2-page loop
+            } else if (g_bfUi != 1) {  // real idle: N-page loop (blocked while confirm modal up)
                 g_idlePage = (g_idlePage + dir + IDLE_PAGES) % IDLE_PAGES;
                 g_idleScreen = -1;
             }
@@ -251,6 +303,32 @@ void loop() {
             } else if (b) {  // RESET -> confirm
                 g_confirmReset = true;
                 g_devRedraw = true;
+                tapConsumed = true;
+            }
+        }
+    }
+
+    // Backflush page taps (real idle, page 2). Big hit-boxes (+12px).
+    if (rising && !g_dev && !lmDemo() && g_idlePage == 2 && !tapConsumed) {
+        const int M = 12;
+        bool a = inRect(tx, ty, BTN_X - M, BTN_A_Y - M, BTN_W + 2 * M, BTN_H + 2 * M);
+        bool b = inRect(tx, ty, BTN_X - M, BTN_B_Y - M, BTN_W + 2 * M, BTN_H + 2 * M);
+        if (g_bfUi == 1) {  // confirm modal
+            if (a) {  // CONFIRM -> send the command
+                lmRequestBackflush();
+                g_bfUi = 2;
+                g_bfReqAt = now;
+                g_bfSeen = false;
+            } else if (b) {  // CANCEL
+                g_bfUi = 0;
+            }
+            tapConsumed = true;  // modal swallows all taps
+            g_idleScreen = -1;
+        } else if (g_bfUi == 0) {  // idle: START (gated when the machine is off/unreachable)
+            bool off = (strcmp(lmState().status, "Off") == 0) || !lmState().connected;
+            if (a && !off) {
+                g_bfUi = 1;
+                g_idleScreen = -1;
                 tapConsumed = true;
             }
         }

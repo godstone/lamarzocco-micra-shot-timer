@@ -393,6 +393,72 @@ void displayResetConfirm() {
     canvas->flush();
 }
 
+// Backflush / cleaning screen. ui: 0=idle (START), 1=confirm, 2=running, 3=done.
+void displayBackflush(const BrewState &s, int ui) {
+    uint16_t green = gfx->color565(120, 200, 165);
+    int cx = canvas->width() / 2, cy = canvas->height() / 2;
+    canvas->fillScreen(COL_BG);
+
+    if (ui == 1) {  // confirm modal (no dots/icon — same pattern as reset-confirm)
+        drawCenteredClassic("BACKFLUSH?", 92, 3, COL_STEAM);
+        drawCenteredClassic("insert blind filter", 130, 2, COL_DIM);
+        drawCenteredClassic("+ detergent", 156, 2, COL_DIM);
+        drawButton(BTN_X, BTN_A_Y + 8, BTN_W, BTN_H, "CONFIRM", green);
+        drawButton(BTN_X, BTN_B_Y, BTN_W, BTN_H, "CANCEL", COL_FG);
+        canvas->flush();
+        return;
+    }
+
+    if (ui == 3) {  // done
+        drawCentered("DONE", cy - 10, &LuckiestGuy36pt7b, green);
+        drawCenteredClassic("cleaning complete", cy + 40, 2, COL_DIM);
+        drawPageDots();
+        drawConnIcon();
+        canvas->flush();
+        return;
+    }
+
+    if (ui == 2 || s.backflushStatus != 0) {  // running (Requested / Cleaning)
+        // Spinner: a faint full ring + a dot rotating around it.
+        drawProgressArc(cx, cy, 229, 225, 1.0f, COL_DIM);
+        float ang = (millis() % 1200) / 1200.0f * 2.0f * (float)M_PI - (float)M_PI / 2.0f;
+        int dx = cx + (int)(cosf(ang) * 216), dy = cy + (int)(sinf(ang) * 216);
+        canvas->fillCircle(dx, dy, 8, COL_STEAM);
+        const char *label = (s.backflushStatus == 2) ? "CLEANING" : "STARTING";
+        drawCentered(label, cy - 8, &LuckiestGuy36pt7b, COL_STEAM);
+        drawCenteredClassic("keep filter in", 300, 2, COL_DIM);
+        drawCenteredClassic("until it stops", 326, 2, COL_DIM);
+        drawPageDots();
+        drawConnIcon();
+        canvas->flush();
+        return;
+    }
+
+    // Idle: title, last-cleaned info, and a START button (gated when the machine is off).
+    drawCentered("BACKFLUSH", 100, &LuckiestGuy36pt7b, COL_STEAM);
+    bool off = (strcmp(s.status, "Off") == 0);
+    if (off) {
+        drawButton(BTN_X, BTN_A_Y, BTN_W, BTN_H, "MACHINE OFF", COL_DIM);
+        drawCenteredClassic("turn machine on first", 272, 2, COL_DIM);
+    } else {
+        drawButton(BTN_X, BTN_A_Y, BTN_W, BTN_H, "START", green);
+        if (s.lastCleaningStartMs) {
+            long days = ((long)time(nullptr) - (long)(s.lastCleaningStartMs / 1000)) / 86400L;
+            char lc[28];
+            if (days <= 0)
+                snprintf(lc, sizeof(lc), "cleaned today");
+            else if (days == 1)
+                snprintf(lc, sizeof(lc), "cleaned yesterday");
+            else
+                snprintf(lc, sizeof(lc), "cleaned %ld days ago", days);
+            drawCenteredClassic(lc, 272, 2, COL_DIM);
+        }
+    }
+    drawPageDots();
+    drawConnIcon();
+    canvas->flush();
+}
+
 void displayTimer(float seconds, bool frozen, float steamFrac, float preInfusionSec) {
     char buf[16];
     formatElapsed(seconds, buf, sizeof(buf));  // center timer = total shot time

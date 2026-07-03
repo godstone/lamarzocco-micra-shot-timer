@@ -194,6 +194,7 @@ static bool g_haveKey = false;    // an installation key is loaded/generated
 static bool g_registered = false; // the key is registered with the cloud (/auth/init)
 static time_t g_tokenExp = 0;
 static bool g_liveStarted = false;
+static bool g_backflushRequest = false;  // set by lmRequestBackflush(); dispatched in liveTask
 static WiFiManager g_wm;
 
 static void setError(const char *e) {
@@ -327,6 +328,35 @@ static String authedGet(const String &url) {
     return body;
 }
 
+// Authenticated POST of a JSON body (machine commands, e.g. backflush). Uses its own short-lived
+// TLS client so it never interferes with the reused polling connection. Returns true on 2xx.
+static bool authedPost(const String &url, const String &body) {
+    WiFiClientSecure client;
+    client.setInsecure();  // TODO: pin the lamarzocco.io CA
+    HTTPClient http;
+    if (!http.begin(client, url)) return false;
+    http.addHeader("Content-Type", "application/json");
+    addSignedHeaders(http);
+    http.addHeader("Authorization", "Bearer " + g_access);
+    int code = http.POST((uint8_t *)body.c_str(), body.length());
+    http.end();
+    if (code < 200 || code >= 300) {
+        char e[48];
+        snprintf(e, sizeof(e), "cmd HTTP %d", code);
+        setError(e);
+        return false;
+    }
+    return true;
+}
+
+// Fire the backflush cleaning command (POST .../command/CoffeeMachineBackFlushStartCleaning).
+static void sendBackflush() {
+    bool ok = authedPost(
+        String(LM_BASE) + "/things/" + LM_SERIAL + "/command/CoffeeMachineBackFlushStartCleaning",
+        "{\"enabled\":true}");
+    LOGF("[live] backflush start -> %s\n", ok ? "OK" : "FAILED");
+}
+
 // Parse a dashboard payload (full REST response OR a websocket delta). Merge-style: only the
 // fields actually present are updated, so partial websocket messages don't clobber state.
 static void parseDashboard(const String &payload) {
@@ -337,12 +367,15 @@ static void parseDashboard(const String &payload) {
     }
 
     bool haveStatus = false, havePre = false, haveCoffee = false, haveSteam = false;
+    bool haveBackflush = false;
     const char *status = "";
     uint64_t brewStartMs = 0;
     bool preOn = false;
     float preSec = 0;
     const char *coffStatus = "", *steamStatus = "";
     uint64_t coffReadyMs = 0, steamReadyMs = 0;
+    const char *bfStatus = "";
+    uint64_t bfLastCleanMs = 0;
 
     JsonArray widgets = doc["widgets"].as<JsonArray>();
     if (!widgets.isNull())
@@ -372,6 +405,10 @@ static void parseDashboard(const String &payload) {
                 steamStatus = w["output"]["status"] | "";
                 steamReadyMs = w["output"]["readyStartTime"] | (uint64_t)0;
                 haveSteam = true;
+            } else if (strcmp(code, "CMBackFlush") == 0) {
+                bfStatus = w["output"]["status"] | "";
+                bfLastCleanMs = w["output"]["lastCleaningStartTime"] | (uint64_t)0;
+                haveBackflush = true;
             }
         }
 
@@ -420,6 +457,12 @@ static void parseDashboard(const String &payload) {
     if (havePre) {
         g_state.preInfusionOn = preOn;
         g_state.preInfusionSec = preSec;
+    }
+    if (haveBackflush) {
+        g_state.backflushStatus = (strcmp(bfStatus, "Cleaning") == 0)    ? 2
+                                  : (strcmp(bfStatus, "Requested") == 0) ? 1
+                                                                         : 0;
+        if (bfLastCleanMs) g_state.lastCleaningStartMs = bfLastCleanMs;
     }
     g_state.lastError[0] = 0;
     unlockState();
@@ -681,6 +724,16 @@ static void liveTask(void *) {
                 g_state.signedIn = tok;
                 unlockState();
                 if (tok) {
+                    // Outbound command (backflush): dispatch once when requested from the UI.
+                    bool doBackflush = false;
+                    lockState();
+                    if (g_backflushRequest) {
+                        g_backflushRequest = false;
+                        doBackflush = true;
+                    }
+                    unlockState();
+                    if (doBackflush) sendBackflush();
+
                     // Prefer the realtime websocket; fall back to REST polling otherwise.
                     if (!g_wsUp && millis() >= g_wsBackoffUntil) {
                         if (wsConnect())
@@ -851,5 +904,14 @@ void lmFactoryReset() {
     g_wm.resetSettings();          // clear stored WiFi credentials
     g_prefs.clear();               // clear installation key + shot stats (+ future creds)
     WiFi.disconnect(true, true);   // erase persisted WiFi config
+#endif
+}
+
+void lmRequestBackflush() {
+    // Queue the command; the background task sends it once signed in. No-op in a demo-only build.
+#ifdef HAVE_SECRETS
+    lockState();
+    g_backflushRequest = true;
+    unlockState();
 #endif
 }

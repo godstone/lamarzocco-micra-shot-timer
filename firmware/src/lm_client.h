@@ -23,3 +23,6 @@ bool lmDemo();
 
 // Wipe WiFi + LM cloud/key settings so the device onboards fresh. Caller should restart after.
 void lmFactoryReset();
+
+// Queue a backflush cleaning command (sent by the background task once signed in). No-op in demo.
+void lmRequestBackflush();
