@@ -8,10 +8,10 @@ screen shows and how to interact with the device. (For build/flash and architect
 
 | State | Screen |
 |-------|--------|
-| Power on | La Marzocco lion logo (brand red) for ~2s |
+| Power on | La Marzocco lion logo (brand red) for ~2s — or the boot-log console if enabled |
 | Machine off / unreachable | Machine illustration + "MACHINE OFF" |
 | Warming up | Machine + steam heat-up rings with countdowns |
-| Idle & ready | Shot stats (today + lifetime) |
+| Idle & ready | Swipe carousel: status / shot stats / backflush |
 | Pulling a shot | Pre-infusion phase, then coffee fills bottom→top with centered timer |
 | Just finished | Final shot time held ~15s, then back to standby |
 | WiFi not configured | "WIFI SETUP — join LaMarzocco-Display" (captive portal) |
@@ -55,6 +55,19 @@ match their ring.
 - **LIFETIME** — total shots pulled.
 - Framed by a decorative double ring in brand red.
 
+### 6. Backflush (cleaning)
+The third idle page. Tap **START** (only available while the machine is on), insert the blind
+filter + detergent, and **CONFIRM** — the display sends the machine's backflush command and shows a
+live spinner (**STARTING**, then **CLEANING** while the cycle runs), followed by a brief **DONE**
+screen when the machine reports the cycle finished. When idle, the page shows when the machine was
+last cleaned ("cleaned N days ago").
+
+### 7. Boot-log console (optional)
+When the **BOOTLOG** dev toggle is on, every startup skips the logo and instead shows the boot log
+live on screen (display/touch init, WiFi, cloud sign-in, websocket) — handy for debugging
+connection problems without a computer. Long lines wrap; tap anywhere to continue to the normal UI
+(it auto-continues after 2 minutes). The toggle persists across reboots until switched off.
+
 ## Gestures (touch)
 
 The panel is single-touch, so all gestures use one finger.
@@ -62,17 +75,24 @@ The panel is single-touch, so all gestures use one finger.
 | Gesture | Action |
 |---------|--------|
 | **Swipe** | Move between screens (right-to-left = next, like flicking the screen away). Page dots at the bottom show which screen you're on; the carousel loops. |
-| **Press & hold (~1.5s)** | Open **develop mode** (diagnostics). |
+| **Press & hold (~1.5s)** | Open **develop mode** (diagnostics + actions). |
 | **Double-tap** | Close develop mode. |
-| **Tap the DEMO button** | (in develop mode) toggle demo mode on/off. |
+| **Tap** | Buttons (backflush START/CONFIRM/CANCEL, dev actions); leave the boot-log console. |
 
 ### Page dots
 Gallery-style dots near the bottom indicate the current screen and the total number of screens, like
 a phone photo gallery. The filled dot is the current page.
 
+### Connection icon
+A small icon at the top center shows the live data path: a **lightning bolt** (mint) for the
+realtime websocket, a **cloud** (gray-blue) for REST polling, nothing when disconnected.
+
 ## Develop mode
 
-Press and hold the screen for ~1.5 seconds to open a diagnostics overlay. It shows:
+Press and hold the screen for ~1.5 seconds to open develop mode — two pages, swipe between them,
+close with a quick **double-tap**.
+
+**Page 1 — diagnostics** (live values):
 
 - **demo** — ON / OFF (runtime demo toggle, see below)
 - **wifi** — connected (has an IP) / down
@@ -83,18 +103,23 @@ Press and hold the screen for ~1.5 seconds to open a diagnostics overlay. It sho
 - **heap** — free memory
 - **touch** — current touch count (handy to confirm touch works)
 - **err** — last error, or `none`
-- a tappable **DEMO ON/OFF** button
 
-Close it with a quick **double-tap**.
+**Page 2 — actions** (three buttons):
+
+- **DEMO ON/OFF** — toggle demo mode.
+- **BOOTLOG ON/OFF** — persisted toggle for the boot-log console shown on future startups.
+- **RESET DEVICE** — factory reset (confirm modal): clears WiFi credentials, the LM installation
+  key, saved stats, and the boot-log toggle, then restarts into the captive portal.
 
 ## Demo mode
 
 The device ships with **demo mode off** (so it shows MACHINE OFF until live data is wired up). Turn
 it **on** from the DEMO button in develop mode to preview the UI:
 
-- In demo mode, the screens become a **manual gallery** of all four screens
-  (**Machine off → Heat-up rings → Shot → Stats**). Swipe left/right to browse them; each animates on
-  its own (rings fill and loop, coffee pours and loops). The page dots show all four.
+- In demo mode, the screens become a **manual gallery** of all five screens
+  (**Machine off → Heat-up rings → Shot → Stats → Backflush**). Swipe left/right to browse them;
+  each animates on its own (rings fill and loop, coffee pours and loops, the cleaning spinner
+  spins). The page dots show all five.
 - With demo off, the device is **state-driven** — it shows whatever the machine is actually doing.
 
 ## Generating image assets

@@ -31,9 +31,14 @@ Stylized renders of the on-device screens (round 466×466 panel). Regenerate wit
   **steam** (blue), with M:SS countdowns; full → gone when ready. The steam ring also appears on the
   shot screen if you pull before steam is ready.
 - **Shot stats** — shots today (hero + crema dots) and lifetime total (from the cloud counters).
+- **Backflush page** — start the machine's backflush cleaning cycle from the display (confirm
+  modal, live CLEANING spinner from the cloud status, DONE screen, "cleaned N days ago").
 - **Machine-off screen** — machine illustration + "MACHINE OFF" when off/unreachable.
-- **Touch UI** — swipe carousel with gallery page dots; a hidden **develop mode** (press-and-hold)
-  with live diagnostics (wifi/ip/signin/cloud/status/heap/touch) and a demo toggle.
+- **Touch UI** — swipe carousel with gallery page dots and a connection icon (lightning =
+  websocket, cloud = REST); a hidden **develop mode** (press-and-hold) with live diagnostics
+  (wifi/ip/signin/cloud/status/heap/touch) and an actions page (demo / boot log / factory reset).
+- **Boot-log console** — a persisted dev toggle that mirrors the startup log (WiFi, sign-in,
+  websocket) to the display, for debugging connection issues without a computer.
 - **WiFi captive portal** (WiFiManager) — set WiFi from your phone, no re-flash.
 - **Demo mode** — a self-contained animated preview of every screen.
 
@@ -43,7 +48,8 @@ See **[docs/PRODUCT.md](docs/PRODUCT.md)** for the full screen-by-screen guide a
 
 The newest firmware has **no local API**; machine state lives only in La Marzocco's cloud
 (`lion.lamarzocco.io`). The device authenticates as a registered client (on-device **ECDSA-secp256r1
-request signing** ported from `pylamarzocco`, via mbedTLS) and then:
+request signing** ported from `pylamarzocco`, via mbedTLS), with all TLS verified against **pinned
+Amazon/Starfield root CAs** (`ca_certs.h`), and then:
 
 - **Realtime:** subscribes to the dashboard over a **STOMP-over-wss websocket** for instant brew
   start/stop.
@@ -95,11 +101,13 @@ firmware/                 PlatformIO project (ESP32-S3)
   include/                pin_config.h, config.h, secrets.h.example
   src/
     main.cpp              app loop: state machine, gestures, gallery
-    display.*             rendering (logo, timer, pre-infusion, rings, stats, dev, dots)
+    display.*             rendering (logo, timer, pre-infusion, rings, stats, backflush, dev, dots)
     lm_client.*           data source: demo sim + live cloud client (websocket + REST hybrid)
     lm_auth.*             request signing (ECDSA + custom proof, mbedTLS)
+    ca_certs.h            pinned root CAs for lamarzocco.io TLS
+    bootlog.*             on-screen boot-log console (persisted dev toggle)
     touch.*               FT3168 capacitive touch reader
-    log.h                 DEBUG_LOG-gated logging macros
+    log.h                 DEBUG_LOG-gated logging macros (also feed the boot-log console)
     brew_state.h          shared machine-state struct
     fonts/, logo_lm.h, machine_off.h   generated assets (git-ignored)
 tools/preflight/          Python: validate cloud access + generate the installation key
@@ -109,9 +117,9 @@ docs/                     PRODUCT.md (this device), plan.md (implementation plan
 
 ## Configuration
 
-- **Tunables** (`firmware/include/config.h`): poll interval, brightness, coffee-fill seconds,
-  over-extraction window, post-shot hold, timezone, `LIVE_TIMER_OFFSET_S`, `DEBUG_LOG` (verbose
-  serial), `DEMO_MODE`, `STARTUP_TEST`.
+- **Tunables** (`firmware/include/config.h`): poll + stats intervals, brightness, coffee-fill
+  seconds, over-extraction window, post-shot hold, boot-log hold, timezone, `LIVE_TIMER_OFFSET_S`,
+  `DEBUG_LOG` (verbose serial), `DEMO_MODE`, `STARTUP_TEST`.
 - **Secrets** are kept in `tools/preflight/.env` (single source of truth) and compiled into
   `firmware/include/secrets.h` by `tools/gen_secrets.py`. Both are git-ignored; **no credentials or
   keys are ever committed** (see `.gitignore`).
