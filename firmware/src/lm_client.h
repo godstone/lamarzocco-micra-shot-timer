@@ -8,8 +8,8 @@
 // One-time setup. In real mode: sign in to the cloud (assumes WiFi+NTP already up).
 void lmBegin();
 
-// Refresh state from the cloud (real) or advance the simulation (demo).
-// Safe to call frequently; it self-rate-limits to POLL_INTERVAL_MS.
+// Advance the demo simulation (LIVE polling runs on its own background task).
+// Safe to call every loop iteration.
 void lmPoll();
 
 const BrewState &lmState();
@@ -26,3 +26,6 @@ void lmFactoryReset();
 
 // Queue a backflush cleaning command (sent by the background task once signed in). No-op in demo.
 void lmRequestBackflush();
+
+// Drop a queued-but-unsent backflush command (call when the UI stops waiting for it).
+void lmCancelBackflush();

@@ -179,6 +179,7 @@ static float demoElapsed() {
 #include <WiFiManager.h>
 #include <esp_wifi.h>
 
+#include "ca_certs.h"
 #include "lm_auth.h"
 #include "mbedtls/base64.h"
 
@@ -187,6 +188,14 @@ static float demoElapsed() {
 #define WIFI_PORTAL_AP "LaMarzocco-Display"
 #define WS_RETRY_MS 25000  // after a websocket drop, run on REST this long before retrying
                            // (avoids fighting the official app for the single connection)
+#define WS_PING_MS 25000   // client ping cadence — keeps NAT open and proves the link is alive
+#define WS_STALE_MS 75000  // no frame (not even a pong) for this long -> connection is dead
+#define REG_RETRY_MS 30000 // backoff between /auth/init registration attempts
+
+// Build with -DLM_TLS_INSECURE=1 to skip certificate verification (debugging only).
+#ifndef LM_TLS_INSECURE
+#define LM_TLS_INSECURE 0
+#endif
 
 static String g_access, g_refresh;
 static Preferences g_prefs;  // persists shot counts + the on-device installation key
@@ -204,6 +213,16 @@ static void setError(const char *e) {
     unlockState();
 }
 
+// TLS trust for all lamarzocco.io connections: pinned Amazon/Starfield roots (ca_certs.h).
+// NTP runs before any request is attempted, so certificate validity checks work.
+static void tlsConfig(WiFiClientSecure &c) {
+#if LM_TLS_INSECURE
+    c.setInsecure();
+#else
+    c.setCACert(LM_ROOT_CAS);
+#endif
+}
+
 static void addSignedHeaders(HTTPClient &http) {
     LmSignedHeaders h;
     if (!lmAuthHeaders(h)) return;
@@ -216,7 +235,7 @@ static void addSignedHeaders(HTTPClient &http) {
 // POST a token request (signin/refresh); fills g_access/g_refresh on success.
 static bool postToken(const char *path, const String &body) {
     WiFiClientSecure client;
-    client.setInsecure();  // TODO: pin the lamarzocco.io CA for full verification
+    tlsConfig(client);
     HTTPClient http;
     if (!http.begin(client, String(LM_BASE) + path)) return false;
     http.addHeader("Content-Type", "application/json");
@@ -230,7 +249,7 @@ static bool postToken(const char *path, const String &body) {
         if (!jerr) {
             g_access = doc["accessToken"].as<String>();
             g_refresh = doc["refreshToken"].as<String>();
-            g_tokenExp = time(nullptr) + 3600;
+            g_tokenExp = time(nullptr) + (doc["expiresIn"] | 3600);
             ok = !g_access.isEmpty();
         }
         if (!ok) {
@@ -278,7 +297,7 @@ static bool ensureToken() {
 // Register this device's generated installation key with the cloud (one-time, POST /auth/init).
 static bool registerClient() {
     WiFiClientSecure client;
-    client.setInsecure();
+    tlsConfig(client);
     HTTPClient http;
     if (!http.begin(client, String(LM_BASE) + "/auth/init")) return false;
     http.addHeader("Content-Type", "application/json");
@@ -306,7 +325,7 @@ static bool g_httpInit = false;
 
 static String authedGet(const String &url) {
     if (!g_httpInit) {
-        g_tls.setInsecure();
+        tlsConfig(g_tls);
         g_http.setReuse(true);  // reuse the connection across polls
         g_httpInit = true;
     }
@@ -332,7 +351,7 @@ static String authedGet(const String &url) {
 // TLS client so it never interferes with the reused polling connection. Returns true on 2xx.
 static bool authedPost(const String &url, const String &body) {
     WiFiClientSecure client;
-    client.setInsecure();  // TODO: pin the lamarzocco.io CA
+    tlsConfig(client);
     HTTPClient http;
     if (!http.begin(client, url)) return false;
     http.addHeader("Content-Type", "application/json");
@@ -517,6 +536,8 @@ static void fetchStats() {
 static WiFiClientSecure g_wsTls;
 static bool g_wsUp = false;
 static uint32_t g_wsBackoffUntil = 0;
+static uint32_t g_wsLastRxMs = 0;    // last frame received (any opcode)
+static uint32_t g_wsLastPingMs = 0;  // last client ping sent
 
 static String b64bytes(const uint8_t *d, size_t n) {
     size_t need = 0;
@@ -593,9 +614,14 @@ static bool wsReadFrame(String &out, uint8_t &opcode, uint32_t toMs) {
             len = (len << 8) | x;
         }
     }
+    if (len > 32768) return false;  // sanity cap; dashboard frames are a few KB
     uint8_t mask[4] = {0, 0, 0, 0};
     if (masked)
-        for (int i = 0; i < 4; i++) mask[i] = wsReadByte(toMs);
+        for (int i = 0; i < 4; i++) {
+            int m = wsReadByte(toMs);
+            if (m < 0) return false;
+            mask[i] = (uint8_t)m;
+        }
     out = "";
     out.reserve(len + 1);
     for (uint64_t i = 0; i < len; i++) {
@@ -610,7 +636,7 @@ static bool wsReadFrame(String &out, uint8_t &opcode, uint32_t toMs) {
 // HTTP upgrade + STOMP CONNECT + SUBSCRIBE. Returns true once subscribed.
 static bool wsConnect() {
     if (!ensureToken()) return false;
-    g_wsTls.setInsecure();
+    tlsConfig(g_wsTls);
     g_wsTls.setTimeout(6000);  // ms — read timeout for the handshake response
     if (!g_wsTls.connect(LM_HOST, 443)) {
         setError("ws tcp");
@@ -666,16 +692,20 @@ static bool wsConnect() {
     sub += '\0';
     wsSendFrame(sub, 0x81);
     LOGLN("[ws] connected + subscribed");
+    g_wsLastRxMs = g_wsLastPingMs = millis();
     return true;
 }
 
 // Process any pending websocket frames. Returns false on disconnect.
+// Watchdog: the TCP link can die silently (NAT timeout, router reboot) with connected()
+// still true — so we ping every WS_PING_MS and treat no frame within WS_STALE_MS as dead.
 static bool wsService() {
     if (!g_wsTls.connected()) return false;
     while (g_wsTls.available()) {
         String payload;
         uint8_t op;
         if (!wsReadFrame(payload, op, 3000)) return false;
+        g_wsLastRxMs = millis();
         if (op == 0x8) return false;             // close
         if (op == 0x9) {                         // ping -> pong
             wsSendFrame(payload, 0x8A);
@@ -691,13 +721,27 @@ static bool wsService() {
             if (json.length()) parseDashboard(json);
         }
     }
+    uint32_t now = millis();
+    if (now - g_wsLastPingMs >= WS_PING_MS) {
+        g_wsLastPingMs = now;
+        if (!wsSendFrame("", 0x89)) return false;  // ping; expect a pong -> g_wsLastRxMs
+    }
+    if (now - g_wsLastRxMs >= WS_STALE_MS) {
+        LOGLN("[ws] stale (no frames) -> reconnect");
+        return false;
+    }
     return true;
 }
 
 static void liveTask(void *) {
-    int statsCountdown = 0;
+    uint32_t nextStatsAt = 0;  // next fetchStats() time (millis)
+    uint32_t regRetryAt = 0;   // registration backoff
     for (;;) {
         g_wm.process();  // service the captive portal / DNS while it's open
+
+        lockState();
+        bool brewing = g_state.brewing;  // snapshot for this iteration
+        unlockState();
 
         if (!g_demoEnabled) {
             bool wifiUp = (WiFi.status() == WL_CONNECTED);
@@ -711,11 +755,14 @@ static void liveTask(void *) {
                 g_state.ip[0] = 0;
             unlockState();
 
-            if (wifiUp && clockOk && g_haveKey && !g_registered) {
+            if (wifiUp && clockOk && g_haveKey && !g_registered &&
+                (int32_t)(millis() - regRetryAt) >= 0) {
                 // Register the on-device key with the cloud (once), before we can sign in.
                 if (registerClient()) {
                     g_registered = true;
                     g_prefs.putBool("reg", true);
+                } else {
+                    regRetryAt = millis() + REG_RETRY_MS;
                 }
             }
             if (wifiUp && clockOk && g_registered) {
@@ -753,13 +800,11 @@ static void liveTask(void *) {
                             authedGet(String(LM_BASE) + "/things/" + LM_SERIAL + "/dashboard");
                         if (payload.length()) parseDashboard(payload);
                     }
-                    // Stats are slow (extra requests) — only when NOT brewing and not over WS.
-                    if (!g_wsUp && !g_state.brewing && statsCountdown-- <= 0) {
-                        statsCountdown = 30;
+                    // Stats are slow (two extra requests) — refresh on a timer, never while
+                    // brewing (they'd block brew-start/stop detection for seconds).
+                    if (!brewing && (int32_t)(millis() - nextStatsAt) >= 0) {
+                        nextStatsAt = millis() + STATS_REFRESH_MS;
                         fetchStats();
-                    } else if (g_wsUp && statsCountdown-- <= 0) {
-                        statsCountdown = 300;  // ~ every 300 loops over WS (loops are short)
-                        if (!g_state.brewing) fetchStats();
                     }
                     lockState();
                     g_state.connMode = g_wsUp ? 1 : (g_state.networkReady ? 2 : 0);
@@ -777,7 +822,7 @@ static void liveTask(void *) {
             }
         }
         // Websocket: service frames promptly. REST: fast while brewing, relaxed otherwise.
-        uint32_t d = g_wsUp ? 30 : (g_state.brewing ? 600 : LIVE_POLL_INTERVAL_MS);
+        uint32_t d = g_wsUp ? 30 : (brewing ? 600 : LIVE_POLL_INTERVAL_MS);
         vTaskDelay(pdMS_TO_TICKS(d));
     }
 }
@@ -877,8 +922,13 @@ void lmPoll() {
 float lmElapsedSeconds() {
     if (g_demoEnabled) return demoElapsed();
     // LIVE: elapsed since the machine's brew start (epoch ms), via NTP-synced clock.
+    // Copy under the lock — a uint64_t read isn't atomic on this 32-bit core and the
+    // live task writes it from the other core.
+    lockState();
+    bool brewing = g_state.brewing;
     uint64_t start = g_state.brewStartMs;
-    if (!g_state.brewing || start == 0) return 0;
+    unlockState();
+    if (!brewing || start == 0) return 0;
     uint64_t now = epochMs();
     float e = (now > start) ? (now - start) / 1000.0f : 0;
     e -= LIVE_TIMER_OFFSET_S;  // calibration to match the official app
@@ -887,6 +937,14 @@ float lmElapsedSeconds() {
 
 void lmSetDemo(bool enabled) {
     g_demoEnabled = enabled;
+    int total = 0, today = 0, tday = 0;
+#ifdef HAVE_SECRETS
+    if (!enabled) {  // read NVS before taking the state lock
+        total = g_prefs.getInt("total", 0);
+        today = g_prefs.getInt("today", 0);
+        tday = g_prefs.getInt("tday", 0);
+    }
+#endif
     lockState();
     if (enabled) {
         demoReset();
@@ -895,6 +953,10 @@ void lmSetDemo(bool enabled) {
         g_state.brewing = false;
         g_state.connected = false;
         strncpy(g_state.status, "Off", sizeof(g_state.status));
+        // Restore the last-synced shot counts (the demo overwrote them with fake numbers).
+        g_state.shotsTotal = total;
+        g_state.shotsToday = today;
+        g_state.shotsTodayDay = tday;
     }
     unlockState();
 }
@@ -912,6 +974,16 @@ void lmRequestBackflush() {
 #ifdef HAVE_SECRETS
     lockState();
     g_backflushRequest = true;
+    unlockState();
+#endif
+}
+
+void lmCancelBackflush() {
+    // Drop a still-queued command (UI gave up waiting). Without this, a request queued while
+    // offline would fire whenever sign-in eventually succeeds — with no UI showing it.
+#ifdef HAVE_SECRETS
+    lockState();
+    g_backflushRequest = false;
     unlockState();
 #endif
 }

@@ -1,15 +1,6 @@
 // Tunable behaviour for the brew-timer display.
 #pragma once
 
-// How often to poll the La Marzocco cloud dashboard (ms). Start conservative (2000-5000)
-// and tighten toward 1000 once you've confirmed there's no throttling.
-#ifndef POLL_INTERVAL_MS
-#define POLL_INTERVAL_MS 1500
-#endif
-
-// Display frame refresh while brewing (ms) — the timer counts up locally between polls.
-#define TIMER_REFRESH_MS 100
-
 // Panel brightness 0-255. AMOLED is very bright; ~140 is comfortable indoors.
 #ifndef DISPLAY_BRIGHTNESS
 #define DISPLAY_BRIGHTNESS 140
@@ -37,6 +28,8 @@
 // LIVE mode: how often the background task polls the cloud dashboard (ms). The timer counts
 // up locally between polls, so this only bounds brew-start detection latency.
 #define LIVE_POLL_INTERVAL_MS 2000
+// How often to refresh the shot-count stats (two extra HTTPS requests; skipped while brewing).
+#define STATS_REFRESH_MS 60000
 // LM_TIMEZONE (for the "shots today" trend query) comes from .env -> secrets.h; lm_client.cpp
 // provides a default if it's not set there.
 

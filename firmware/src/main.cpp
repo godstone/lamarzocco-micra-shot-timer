@@ -215,6 +215,7 @@ void loop() {
                 g_idleScreen = -1;
             } else if (now - g_bfReqAt > 20000) {
                 g_bfUi = 0;  // command never took effect — back to idle
+                lmCancelBackflush();  // drop it if still queued, so it can't fire later
                 g_idleScreen = -1;
             }
         } else if (g_bfUi == 3 && now - g_bfDoneAt > 4000) {
