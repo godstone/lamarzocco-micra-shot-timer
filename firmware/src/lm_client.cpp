@@ -733,9 +733,25 @@ static bool wsService() {
     return true;
 }
 
+// Resolve the NTP pool ourselves and hand SNTP a literal IP. SNTP then never issues async
+// DNS queries, so hostByName()'s dns_clear_cache() (triggered by IP-state changes on the
+// first HTTPS connect after boot/reconnect) has no pending SNTP callback to misfire on our
+// task. Doing the resolve here is safe: SNTP is idle/IP-only at every call site.
+static bool startSntp() {
+    IPAddress ntp;
+    if (!WiFi.hostByName(NTP_SERVER, ntp)) {
+        setError("ntp dns");
+        return false;
+    }
+    configTime(GMT_OFFSET_SEC, DAYLIGHT_OFFSET_SEC, ntp.toString().c_str());
+    LOGF("[live] ntp %s -> %s\n", NTP_SERVER, ntp.toString().c_str());
+    return true;
+}
+
 static void liveTask(void *) {
     uint32_t nextStatsAt = 0;  // next fetchStats() time (millis)
     uint32_t regRetryAt = 0;   // registration backoff
+    bool sntpUp = false;       // SNTP started (re-done after each WiFi reconnect)
     for (;;) {
         g_wm.process();  // service the captive portal / DNS while it's open
 
@@ -745,6 +761,8 @@ static void liveTask(void *) {
 
         if (!g_demoEnabled) {
             bool wifiUp = (WiFi.status() == WL_CONNECTED);
+            if (wifiUp && !sntpUp) sntpUp = startSntp();
+            if (!wifiUp) sntpUp = false;  // re-resolve after a reconnect
             bool clockOk = (time(nullptr) > 1700000000);
 
             lockState();
@@ -880,7 +898,10 @@ static void liveBegin() {
         LOGF("[live] seeded WiFi from secrets ('%s')\n", WIFI_SSID);
     }
 
-    configTime(GMT_OFFSET_SEC, DAYLIGHT_OFFSET_SEC, NTP_SERVER);
+    // NTP is started from liveTask once WiFi is up (see startSntp) — NOT here. Starting SNTP
+    // with a hostname would leave an async DNS query pending exactly when our first HTTPS
+    // connect runs, and Arduino's hostByName() calls dns_clear_cache() on IP-state changes,
+    // which fires that pending SNTP callback on our task -> lwIP thread-safety assert -> reboot.
 
     // WiFiManager: connect with stored creds, else open captive portal "LaMarzocco-Display".
     g_wm.setConfigPortalBlocking(false);  // non-blocking; serviced via g_wm.process()

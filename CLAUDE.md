@@ -63,6 +63,10 @@ Reset into the app without flashing: open the port with pyserial and pulse `rts=
 
 - The cloud allows **one realtime websocket per machine**. The official app takes it when opened;
   on disconnect, fall back to REST and back off (`WS_RETRY_MS`) — never fight the app.
+- **Never start SNTP with a hostname** (`configTime("pool.ntp.org")`). Arduino's `hostByName()`
+  calls lwIP `dns_clear_cache()` on IP-state changes (first HTTPS connect after boot/reconnect);
+  a pending SNTP DNS query then fires its callback on our task → lwIP thread-safety assert →
+  boot loop. `startSntp()` in lm_client.cpp resolves the pool once and hands SNTP a literal IP.
 - `parseDashboard()` is merge-style: websocket deltas contain only some widgets, so only update
   fields that are actually present. Widgets used: `CMMachineStatus`, `CMPreBrewing`,
   `CMCoffeeBoiler`, `CMSteamBoilerLevel`, `CMBackFlush`.
