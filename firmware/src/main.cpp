@@ -273,6 +273,54 @@ void loop() {
     bool rising = down && !prevDown;
     prevDown = down;
 
+    // Screen standby (AMOLED longevity): after STANDBY_AFTER_MS with no touch and no machine
+    // events, go fully dark. Wakes on any touch (swallowed until release, so it can't press a
+    // button underneath) or on any machine event — a brew start wakes straight into the timer.
+    // The background state machines above keep running; only rendering + gestures are gated.
+    static uint32_t lastActivityMs = 0;
+    static bool standby = false;
+    static bool wakeGuard = false;
+    {
+        const BrewState &s = lmState();
+        static char fpStatus[16] = "";
+        static uint8_t fpFlags = 0xFF;  // != first real fingerprint -> boot counts as activity
+        uint8_t flags = ((uint8_t)s.brewing << 0) | ((uint8_t)s.connected << 1) |
+                        ((uint8_t)s.coffeeReady << 2) | ((uint8_t)s.steamReady << 3) |
+                        ((uint8_t)(s.backflushStatus & 3) << 4) | ((uint8_t)s.wifiPortal << 6);
+        bool changed = (strcmp(fpStatus, s.status) != 0) || (flags != fpFlags);
+        if (changed) {
+            strncpy(fpStatus, s.status, sizeof(fpStatus) - 1);
+            fpStatus[sizeof(fpStatus) - 1] = 0;
+            fpFlags = flags;
+            lastActivityMs = now;
+        }
+        if (down) lastActivityMs = now;
+
+        if (standby) {
+            if (down || changed) {
+                standby = false;
+                if (down) wakeGuard = true;  // swallow the waking touch until release
+                g_idleScreen = -1;           // repaint whatever screen we were on
+                g_devRedraw = true;
+                LOGLN("[ui] standby wake");
+            } else {
+                delay(50);
+                return;
+            }
+        } else if (now - lastActivityMs >= STANDBY_AFTER_MS) {
+            standby = true;
+            LOGLN("[ui] standby (screen dark)");
+            displayDark();
+            delay(50);
+            return;
+        }
+    }
+    if (wakeGuard) {  // touch invisible to gestures/buttons until the finger lifts
+        if (!down) wakeGuard = false;
+        down = false;
+        rising = false;
+    }
+
     // Horizontal swipe -> step the idle page (wrapping loop). Detected MID-gesture (as soon
     // as you've moved far enough), which is robust to brief touch dropouts on release.
     static int swStartX = 0, swStartY = 0;

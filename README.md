@@ -39,6 +39,9 @@ Stylized renders of the on-device screens (round 466×466 panel). Regenerate wit
   (wifi/ip/signin/cloud/status/heap/touch) and an actions page (demo / boot log / factory reset).
 - **Boot-log console** — a persisted dev toggle that mirrors the startup log (WiFi, sign-in,
   websocket) to the display, for debugging connection issues without a computer.
+- **Screen standby** — after 15 min with no touch and no machine events the AMOLED goes fully
+  dark (pixels off, for panel longevity); any touch or machine activity (power on, brew start,
+  boiler ready, backflush) wakes it instantly.
 - **WiFi captive portal** (WiFiManager) — set WiFi from your phone, no re-flash.
 - **Demo mode** — a self-contained animated preview of every screen.
 

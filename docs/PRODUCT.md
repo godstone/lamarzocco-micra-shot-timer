@@ -14,6 +14,7 @@ screen shows and how to interact with the device. (For build/flash and architect
 | Idle & ready | Swipe carousel: status / shot stats / backflush |
 | Pulling a shot | Pre-infusion phase, then coffee fills bottom→top with centered timer |
 | Just finished | Final shot time held ~15s, then back to standby |
+| 15 min without activity | Screen fully dark (standby) — tap or machine activity wakes it |
 | WiFi not configured | "WIFI SETUP — join LaMarzocco-Display" (captive portal) |
 
 ## Screens
@@ -62,7 +63,15 @@ live spinner (**STARTING**, then **CLEANING** while the cycle runs), followed by
 screen when the machine reports the cycle finished. When idle, the page shows when the machine was
 last cleaned ("cleaned N days ago").
 
-### 7. Boot-log console (optional)
+### 7. Screen standby
+After **15 minutes** with no touch and no machine events, the screen goes **fully dark** — on an
+AMOLED that means the pixels are off, which protects the panel from burn-in and extends its life.
+It wakes instantly on **any touch** (the waking tap is swallowed, so it can't accidentally press a
+button) or on **any machine activity**: turning the machine on or off, a brew starting (the display
+wakes straight into the shot timer), a boiler reaching ready, a backflush cycle, or the WiFi setup
+portal opening. The timeout is `STANDBY_AFTER_MS` in `config.h`.
+
+### 8. Boot-log console (optional)
 When the **BOOTLOG** dev toggle is on, every startup skips the logo and instead shows the boot log
 live on screen (display/touch init, WiFi, cloud sign-in, websocket) — handy for debugging
 connection problems without a computer. Long lines wrap; tap anywhere to continue to the normal UI

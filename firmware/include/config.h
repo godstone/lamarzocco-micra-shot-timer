@@ -20,6 +20,11 @@
 // After a shot ends, freeze the final time + filled cup on screen for this long, then go dark.
 #define POST_SHOT_HOLD_MS 15000
 
+// Screen standby (AMOLED longevity): go fully dark after this long with no touch and no machine
+// events. Any touch wakes it (the waking touch is swallowed), as does any machine change —
+// power on/off, brew start/stop, boiler ready, backflush, WiFi portal opening.
+#define STANDBY_AFTER_MS (15UL * 60UL * 1000UL)
+
 // NTP — needed for TLS cert validity and to compute elapsed = now - brewingStartTime.
 #define NTP_SERVER "pool.ntp.org"
 #define GMT_OFFSET_SEC 0
