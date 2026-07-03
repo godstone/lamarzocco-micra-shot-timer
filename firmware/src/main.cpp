@@ -1,5 +1,6 @@
 #include <Arduino.h>
 
+#include "bootlog.h"
 #include "config.h"
 #include "display.h"
 #include "lm_client.h"
@@ -170,6 +171,7 @@ static void repaintCurrent() {
 }
 
 void setup() {
+    bootlogInit();  // before the first LOG line, so the console captures everything
     Serial.begin(115200);
     delay(300);  // let USB CDC enumerate so early logs aren't lost
     LOGLN("\n[boot] La Marzocco brew-timer display");
@@ -179,11 +181,17 @@ void setup() {
     displayInit();
     LOGLN("[boot] display init done");
 
-    displayLogo();
-    delay(1800);
+    if (bootlogActive()) {
+        bootlogSetInline(true);  // boot phase is single-threaded: redraw per LOG line
+        displayBootlog();        // show what was captured before the panel was up
+    } else {
+        displayLogo();
+        delay(1800);
+    }
 
     touchBegin();
     lmBegin();  // connects WiFi + NTP and starts the cloud poller (LIVE mode)
+    bootlogSetInline(false);  // from here loop() drives redraws (liveTask logs from core 0)
     g_mode = MODE_IDLE;
     g_idleScreen = -1;  // idle screen renders on the first loop
 }
@@ -191,6 +199,24 @@ void setup() {
 void loop() {
     lmPoll();
     uint32_t now = millis();
+
+    // Boot-log console: shown from power-on while the dev toggle is on. A tap (or the
+    // BOOTLOG_HOLD_MS timeout) leaves it for this boot; the toggle itself stays on.
+    if (bootlogActive()) {
+        int bx = 0, by = 0;
+        static bool blPrevDown = false;
+        bool blDown = touchPoint(&bx, &by);
+        bool blTap = blDown && !blPrevDown;
+        blPrevDown = blDown;
+        if (blTap || now >= BOOTLOG_HOLD_MS) {
+            bootlogDismiss();
+            g_idleScreen = -1;  // fall through to the normal UI next loop
+        } else if (bootlogTakeDirty()) {
+            displayBootlog();
+        }
+        delay(33);
+        return;
+    }
 
     // Always return to the status page after the machine powers off (consistent start order).
     static bool prevOff = true;
@@ -283,11 +309,12 @@ void loop() {
     bool tapConsumed = false;
     if (rising && g_dev) {
         const int M = 12;
-        bool a = inRect(tx, ty, BTN_X - M, BTN_A_Y - M, BTN_W + 2 * M, BTN_H + 2 * M);
-        bool b = inRect(tx, ty, BTN_X - M, BTN_B_Y - M, BTN_W + 2 * M, BTN_H + 2 * M);
         if (g_confirmReset) {
+            bool a = inRect(tx, ty, BTN_X - M, BTN_A_Y - M, BTN_W + 2 * M, BTN_H + 2 * M);
+            bool b = inRect(tx, ty, BTN_X - M, BTN_B_Y - M, BTN_W + 2 * M, BTN_H + 2 * M);
             if (a) {  // CONFIRM reset
                 displaySplash("RESETTING", "");
+                bootlogSetEnabled(false);  // factory reset clears the boot-log toggle too
                 lmFactoryReset();
                 delay(400);
                 ESP.restart();
@@ -296,12 +323,19 @@ void loop() {
                 g_devRedraw = true;
             }
             tapConsumed = true;  // modal swallows all taps (no accidental close)
-        } else if (g_devPage == 1) {
+        } else if (g_devPage == 1) {  // three stacked buttons: DEMO / BOOTLOG / RESET
+            bool a = inRect(tx, ty, BTN_X - M, DEV_BTN_A_Y - M, BTN_W + 2 * M, BTN_H + 2 * M);
+            bool b = inRect(tx, ty, BTN_X - M, DEV_BTN_B_Y - M, BTN_W + 2 * M, BTN_H + 2 * M);
+            bool c = inRect(tx, ty, BTN_X - M, DEV_BTN_C_Y - M, BTN_W + 2 * M, BTN_H + 2 * M);
             if (a) {  // DEMO toggle
                 lmSetDemo(!lmDemo());
                 g_devRedraw = true;
                 tapConsumed = true;
-            } else if (b) {  // RESET -> confirm
+            } else if (b) {  // BOOTLOG toggle (persisted; console shows on the next boots)
+                bootlogSetEnabled(!bootlogEnabled());
+                g_devRedraw = true;
+                tapConsumed = true;
+            } else if (c) {  // RESET -> confirm
                 g_confirmReset = true;
                 g_devRedraw = true;
                 tapConsumed = true;
@@ -370,7 +404,7 @@ void loop() {
             if (g_confirmReset)
                 displayResetConfirm();
             else if (g_devPage == 1)
-                displayDevActions(lmDemo());
+                displayDevActions(lmDemo(), bootlogEnabled());
             else
                 displayDevInfo(lmState(), down ? 1 : 0, lmDemo());
             g_lastDevRender = now;

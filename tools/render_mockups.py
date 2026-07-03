@@ -60,6 +60,7 @@ ST_GREEN=(120,200,165); ST_AMBER=(255,170,40); WS_MINT=(120,210,175)
 CLOUD=(140,155,175); DEV_GRN=(40,200,90); DEV_RED=(230,60,50); ACT_AMB=(255,150,60)
 
 BTN_X, BTN_W, BTN_H, BTN_A_Y, BTN_B_Y = 96, 274, 66, 156, 258  # config.h
+DEV_BTN_A_Y, DEV_BTN_B_Y, DEV_BTN_C_Y = 120, 213, 306  # dev actions page (3 buttons)
 
 def lg(px):   return ImageFont.truetype(LG, px)
 def mono(px): return ImageFont.truetype(MONO, px) if MONO else ImageFont.load_default()
@@ -212,12 +213,14 @@ def render_machine_off(name):
     classic(d, "MACHINE OFF", 360, 4, DIM)
     page_dots(d, 0, 2); save(img, name)
 
-def render_dev_actions(name, demo_on=True):
+def render_dev_actions(name, demo_on=True, bootlog_on=False):
     img = canvas(); d = ImageDraw.Draw(img)
-    centered(d, "DEV", 74, lg(68), LM_RED)
-    button(d, BTN_X, BTN_A_Y, BTN_W, BTN_H, "DEMO ON" if demo_on else "DEMO OFF",
+    centered(d, "DEV", 64, lg(68), LM_RED)
+    button(d, BTN_X, DEV_BTN_A_Y, BTN_W, BTN_H, "DEMO ON" if demo_on else "DEMO OFF",
            DEV_GRN if demo_on else DIM)
-    button(d, BTN_X, BTN_B_Y, BTN_W, BTN_H, "RESET DEVICE", ACT_AMB)
+    button(d, BTN_X, DEV_BTN_B_Y, BTN_W, BTN_H, "BOOTLOG ON" if bootlog_on else "BOOTLOG OFF",
+           DEV_GRN if bootlog_on else DIM)
+    button(d, BTN_X, DEV_BTN_C_Y, BTN_W, BTN_H, "RESET DEVICE", ACT_AMB)
     page_dots(d, 1, 2); save(img, name)
 
 def render_dev_info(name):

@@ -48,13 +48,20 @@
 #define DEBUG_LOG 1
 #endif
 
-// Dev "actions" page: two big, easy-tap buttons (top = DEMO / CONFIRM, bottom = RESET / CANCEL).
-// Same slots are reused by the reset-confirm modal. Kept inside the round panel.
+// Big, easy-tap buttons kept inside the round panel. The two BTN_*_Y slots are used by the
+// confirm modals (reset, backflush) and the backflush page; the dev "actions" page stacks
+// three buttons (DEMO / BOOTLOG / RESET) in its own DEV_BTN_*_Y slots.
 #define BTN_X 96
 #define BTN_W 274
 #define BTN_H 66
-#define BTN_A_Y 156  // top button
-#define BTN_B_Y 258  // bottom button
+#define BTN_A_Y 156  // top button (modals / backflush)
+#define BTN_B_Y 258  // bottom button (modals / backflush)
+#define DEV_BTN_A_Y 120
+#define DEV_BTN_B_Y 213
+#define DEV_BTN_C_Y 306
+
+// Boot-log console (dev toggle): if nobody taps it away, leave it this long after power-on.
+#define BOOTLOG_HOLD_MS 120000
 
 // STARTUP_TEST: on boot, cycle RED/GREEN/BLUE/WHITE + ramp brightness to prove the panel
 // works independent of the UI. Flip to 1 if you ever need to debug the display again.

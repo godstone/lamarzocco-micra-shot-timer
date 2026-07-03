@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <Arduino_GFX_Library.h>
 
+#include "bootlog.h"
 #include "config.h"
 #include "log.h"
 #include "fonts/LuckiestGuy36.h"
@@ -371,15 +372,38 @@ void displayDevInfo(const BrewState &s, int touchPoints, bool demoEnabled) {
     canvas->flush();
 }
 
-void displayDevActions(bool demoEnabled) {
+void displayDevActions(bool demoEnabled, bool bootlogOn) {
     uint16_t green = gfx->color565(120, 200, 165);
     uint16_t amber = gfx->color565(255, 150, 60);
     canvas->fillScreen(COL_BG);
-    drawCentered("DEV", 74, &LuckiestGuy36pt7b, COL_LM_RED);
-    drawButton(BTN_X, BTN_A_Y, BTN_W, BTN_H, demoEnabled ? "DEMO ON" : "DEMO OFF",
+    drawCentered("DEV", 64, &LuckiestGuy36pt7b, COL_LM_RED);
+    drawButton(BTN_X, DEV_BTN_A_Y, BTN_W, BTN_H, demoEnabled ? "DEMO ON" : "DEMO OFF",
                demoEnabled ? green : COL_DIM);
-    drawButton(BTN_X, BTN_B_Y, BTN_W, BTN_H, "RESET DEVICE", amber);
+    drawButton(BTN_X, DEV_BTN_B_Y, BTN_W, BTN_H, bootlogOn ? "BOOTLOG ON" : "BOOTLOG OFF",
+               bootlogOn ? green : COL_DIM);
+    drawButton(BTN_X, DEV_BTN_C_Y, BTN_W, BTN_H, "RESET DEVICE", amber);
     drawPageDots();
+    canvas->flush();
+}
+
+// Boot-log console: the most recent LOG lines, updated live while starting up.
+void displayBootlog() {
+    canvas->fillScreen(COL_BG);
+    drawCenteredClassic("BOOT LOG", 56, 2, COL_LM_RED);
+
+    char lines[BOOTLOG_LINES][BOOTLOG_COLS + 1];
+    int n = bootlogGetLines(lines, BOOTLOG_LINES);
+    canvas->setFont(NULL);
+    canvas->setTextSize(2);
+    canvas->setTextColor(COL_FG);
+    int y = 92;
+    for (int i = 0; i < n; i++) {
+        canvas->setCursor(70, y);
+        canvas->print(lines[i]);
+        y += 22;
+    }
+
+    drawCenteredClassic("tap to continue", 414, 2, COL_DIM);
     canvas->flush();
 }
 

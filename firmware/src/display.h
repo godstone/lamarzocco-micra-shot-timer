@@ -18,8 +18,11 @@ void displayLogo();
 // Develop mode page 1: diagnostics overlay (mode, wifi/ip/signin/cloud/status/heap/touch/err).
 void displayDevInfo(const BrewState &s, int touchPoints, bool demoEnabled);
 
-// Develop mode page 2: big DEMO toggle + RESET buttons.
-void displayDevActions(bool demoEnabled);
+// Develop mode page 2: big DEMO / BOOTLOG toggles + RESET button.
+void displayDevActions(bool demoEnabled, bool bootlogOn);
+
+// Boot-log console: recent LOG lines, live while starting up (see bootlog.h).
+void displayBootlog();
 
 // Reset confirmation modal: CONFIRM / CANCEL.
 void displayResetConfirm();
