@@ -67,6 +67,8 @@ Reset into the app without flashing: open the port with pyserial and pulse `rts=
   calls lwIP `dns_clear_cache()` on IP-state changes (first HTTPS connect after boot/reconnect);
   a pending SNTP DNS query then fires its callback on our task → lwIP thread-safety assert →
   boot loop. `startSntp()` in lm_client.cpp resolves the pool once and hands SNTP a literal IP.
+  Also: SNTP stores the server-name *pointer* (no copy) and reads it later on the tcpip thread —
+  the string passed to `configTime()` must be a static/immortal buffer, never a temporary.
 - `parseDashboard()` is merge-style: websocket deltas contain only some widgets, so only update
   fields that are actually present. Widgets used: `CMMachineStatus`, `CMPreBrewing`,
   `CMCoffeeBoiler`, `CMSteamBoilerLevel`, `CMBackFlush`.

@@ -741,17 +741,22 @@ static bool startSntp() {
     IPAddress ntp;
     if (!WiFi.hostByName(NTP_SERVER, ntp)) {
         setError("ntp dns");
+        LOGLN("[live] ntp dns lookup failed");
         return false;
     }
-    configTime(GMT_OFFSET_SEC, DAYLIGHT_OFFSET_SEC, ntp.toString().c_str());
-    LOGF("[live] ntp %s -> %s\n", NTP_SERVER, ntp.toString().c_str());
+    // SNTP stores the server-name POINTER (no copy) and reads it later on the tcpip thread,
+    // so the string must live forever — a static buffer, never a temporary.
+    static char ipStr[16];
+    snprintf(ipStr, sizeof(ipStr), "%s", ntp.toString().c_str());
+    configTime(GMT_OFFSET_SEC, DAYLIGHT_OFFSET_SEC, ipStr);
+    LOGF("[live] ntp %s -> %s\n", NTP_SERVER, ipStr);
     return true;
 }
 
 static void liveTask(void *) {
     uint32_t nextStatsAt = 0;  // next fetchStats() time (millis)
     uint32_t regRetryAt = 0;   // registration backoff
-    bool sntpUp = false;       // SNTP started (re-done after each WiFi reconnect)
+    uint32_t sntpRetryAt = 0;  // next SNTP (re)start / pool re-resolve time
     for (;;) {
         g_wm.process();  // service the captive portal / DNS while it's open
 
@@ -761,9 +766,16 @@ static void liveTask(void *) {
 
         if (!g_demoEnabled) {
             bool wifiUp = (WiFi.status() == WL_CONNECTED);
-            if (wifiUp && !sntpUp) sntpUp = startSntp();
-            if (!wifiUp) sntpUp = false;  // re-resolve after a reconnect
             bool clockOk = (time(nullptr) > 1700000000);
+            // Start SNTP once WiFi is up. Until the clock syncs, re-resolve every 20s (the
+            // pool rotates dead members out on each DNS query); after sync, refresh the IP
+            // every 12h so the hourly resyncs don't pin a member that has since died.
+            if (wifiUp && (int32_t)(millis() - sntpRetryAt) >= 0) {
+                if (startSntp())
+                    sntpRetryAt = millis() + (clockOk ? 12UL * 3600UL * 1000UL : 20000UL);
+                else
+                    sntpRetryAt = millis() + 5000;
+            }
 
             lockState();
             g_state.wifiPortal = g_wm.getConfigPortalActive();
