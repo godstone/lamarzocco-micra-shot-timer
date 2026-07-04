@@ -98,7 +98,7 @@ realtime websocket, a **cloud** (gray-blue) for REST polling, nothing when disco
 
 ## Develop mode
 
-Press and hold the screen for ~1.5 seconds to open develop mode — two pages, swipe between them,
+Press and hold the screen for ~1.5 seconds to open develop mode — three pages, swipe between them,
 close with a quick **double-tap**.
 
 **Page 1 — diagnostics** (live values):
@@ -118,7 +118,15 @@ close with a quick **double-tap**.
 - **DEMO ON/OFF** — toggle demo mode.
 - **BOOTLOG ON/OFF** — persisted toggle for the boot-log console shown on future startups.
 - **RESET DEVICE** — factory reset (confirm modal): clears WiFi credentials, the LM installation
-  key, saved stats, and the boot-log toggle, then restarts into the captive portal.
+  key, saved stats, the boot-log toggle, and the rotation setting, then restarts into the captive
+  portal.
+
+**Page 3 — display**:
+
+- **ROTATE 90** — cycles the screen orientation 0° → 90° → 180° → 270°, applied instantly and
+  saved across reboots. Touch input is remapped with it, so buttons and swipes always match what
+  you see — just tap until it looks right for how your device is mounted (the page shows which
+  side the USB cable ends up on).
 
 ## Demo mode
 

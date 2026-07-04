@@ -221,7 +221,17 @@ def render_dev_actions(name, demo_on=True, bootlog_on=False):
     button(d, BTN_X, DEV_BTN_B_Y, BTN_W, BTN_H, "BOOTLOG ON" if bootlog_on else "BOOTLOG OFF",
            DEV_GRN if bootlog_on else DIM)
     button(d, BTN_X, DEV_BTN_C_Y, BTN_W, BTN_H, "RESET DEVICE", ACT_AMB)
-    page_dots(d, 1, 2); save(img, name)
+    page_dots(d, 1, 3); save(img, name)
+
+def render_dev_display(name, rot=1):
+    img = canvas(); d = ImageDraw.Draw(img)
+    centered(d, "DEV", 64, lg(68), LM_RED)
+    cable = ["left", "bottom", "right", "top"]
+    classic(d, "rotation: %d" % (rot * 90), 150, 2, FG)
+    classic(d, "usb cable: %s" % cable[rot & 3], 178, 2, DIM)
+    button(d, BTN_X, DEV_BTN_B_Y, BTN_W, BTN_H, "ROTATE 90", STEAM)
+    classic(d, "tap until it looks right", 320, 2, DIM)
+    page_dots(d, 2, 3); save(img, name)
 
 def render_dev_info(name):
     img = canvas(); d = ImageDraw.Draw(img)
@@ -233,7 +243,7 @@ def render_dev_info(name):
             ("heap:   8231044", DIM), ("touch:  0", DIM), ("err:    none", DEV_GRN)]
     for i, (txt, c) in enumerate(rows):
         classic_left(d, txt, x, y + i*dy, 2, c)
-    page_dots(d, 0, 2); save(img, name)
+    page_dots(d, 0, 3); save(img, name)
 
 def render_reset_confirm(name):
     img = canvas(); d = ImageDraw.Draw(img)
@@ -253,4 +263,5 @@ if __name__ == "__main__":
     render_dev_actions("07-dev-actions.png", demo_on=True)
     render_dev_info("08-dev-info.png")
     render_reset_confirm("09-reset-confirm.png")
+    render_dev_display("10-dev-display.png")
     print("done ->", OUT)

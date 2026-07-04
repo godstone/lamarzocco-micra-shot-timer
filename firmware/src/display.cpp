@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <Arduino_GFX_Library.h>
+#include <Preferences.h>
 
 #include "bootlog.h"
 #include "config.h"
@@ -51,6 +52,19 @@ static uint16_t COL_PREINF;   // pre-infusion accent (teal)
 static int g_pageActive = 0;  // page-indicator state
 static int g_pageCount = 0;
 static int g_connMode = 0;  // 0=none, 1=websocket, 2=cloud/REST
+static int g_rotation = DISPLAY_ROTATION;  // runtime screen rotation (persisted)
+
+int displayRotation() { return g_rotation; }
+
+void displaySetRotation(int rotation) {
+    g_rotation = rotation & 3;
+    canvas->setRotation(g_rotation);
+    Preferences p;
+    p.begin("display", false);
+    p.putInt("rot", g_rotation);
+    p.end();
+    LOGF("[display] rotation -> %d (%d deg)\n", g_rotation, g_rotation * 90);
+}
 
 void displaySetPageIndicator(int active, int count) {
     g_pageActive = active;
@@ -176,7 +190,13 @@ void displayInit() {
     LOGF("[display] driver = %s\n", USE_CO5300 ? "CO5300" : "SH8601");
 
     bool ok = canvas->begin();  // also calls gfx->begin()
-    canvas->setRotation(DISPLAY_ROTATION);  // software rotation (square panel, no HW rotate)
+    {
+        Preferences p;  // user-set rotation (dev DISPLAY page); default from config.h
+        p.begin("display", true);
+        g_rotation = p.getInt("rot", DISPLAY_ROTATION) & 3;
+        p.end();
+    }
+    canvas->setRotation(g_rotation);  // software rotation (square panel, no HW rotate)
     LOGF("[display] canvas->begin() = %d, framebuffer = %p, free heap = %u\n",
                   ok, (void *)canvas->getFramebuffer(), ESP.getFreeHeap());
 
@@ -382,6 +402,21 @@ void displayDevActions(bool demoEnabled, bool bootlogOn) {
     drawButton(BTN_X, DEV_BTN_B_Y, BTN_W, BTN_H, bootlogOn ? "BOOTLOG ON" : "BOOTLOG OFF",
                bootlogOn ? green : COL_DIM);
     drawButton(BTN_X, DEV_BTN_C_Y, BTN_W, BTN_H, "RESET DEVICE", amber);
+    drawPageDots();
+    canvas->flush();
+}
+
+void displayDevDisplay(int rotation) {
+    canvas->fillScreen(COL_BG);
+    drawCentered("DEV", 64, &LuckiestGuy36pt7b, COL_LM_RED);
+    static const char *cable[] = {"left", "bottom", "right", "top"};
+    char b[28];
+    snprintf(b, sizeof(b), "rotation: %d", (rotation & 3) * 90);
+    drawCenteredClassic(b, 150, 2, COL_FG);
+    snprintf(b, sizeof(b), "usb cable: %s", cable[rotation & 3]);
+    drawCenteredClassic(b, 178, 2, COL_DIM);
+    drawButton(BTN_X, DEV_BTN_B_Y, BTN_W, BTN_H, "ROTATE 90", COL_STEAM);
+    drawCenteredClassic("tap until it looks right", 320, 2, COL_DIM);
     drawPageDots();
     canvas->flush();
 }

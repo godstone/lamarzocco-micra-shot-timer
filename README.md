@@ -16,6 +16,8 @@ Stylized renders of the on-device screens (round 466×466 panel). Regenerate wit
 | ![Readiness](docs/screenshots/04-readiness.png) | ![Stats](docs/screenshots/05-stats.png) | ![Machine off](docs/screenshots/06-machine-off.png) |
 | **Dev · actions** | **Dev · diagnostics** | **Dev · reset confirm** |
 | ![Dev actions](docs/screenshots/07-dev-actions.png) | ![Dev info](docs/screenshots/08-dev-info.png) | ![Reset confirm](docs/screenshots/09-reset-confirm.png) |
+| **Dev · display** | | |
+| ![Dev display](docs/screenshots/10-dev-display.png) | | |
 
 ## Features
 
@@ -36,7 +38,8 @@ Stylized renders of the on-device screens (round 466×466 panel). Regenerate wit
 - **Machine-off screen** — machine illustration + "MACHINE OFF" when off/unreachable.
 - **Touch UI** — swipe carousel with gallery page dots and a connection icon (lightning =
   websocket, cloud = REST); a hidden **develop mode** (press-and-hold) with live diagnostics
-  (wifi/ip/signin/cloud/status/heap/touch) and an actions page (demo / boot log / factory reset).
+  (wifi/ip/signin/cloud/status/heap/touch), an actions page (demo / boot log / factory reset),
+  and a display page (screen rotation, persisted — touch remaps automatically).
 - **Boot-log console** — a persisted dev toggle that mirrors the startup log (WiFi, sign-in,
   websocket) to the display, for debugging connection issues without a computer.
 - **Screen standby** — after 15 min with no touch and no machine events the AMOLED goes fully

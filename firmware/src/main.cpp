@@ -15,8 +15,9 @@ static float g_lastElapsed = 0;  // captured at the moment brewing stops
 static uint32_t g_frozenAt = 0;  // millis() when the shot ended
 
 // Develop mode: toggled by a two-finger touch; shows a diagnostics overlay.
+#define DEV_PAGES 3  // 0 = diagnostics, 1 = actions, 2 = display (rotation)
 static bool g_dev = false;
-static int g_devPage = 0;          // 0 = diagnostics, 1 = actions
+static int g_devPage = 0;
 static bool g_confirmReset = false;  // reset-confirmation modal shown
 static bool g_devRedraw = true;      // force a dev re-render
 static uint32_t g_lastDevRender = 0;
@@ -334,9 +335,9 @@ void loop() {
         int dx = tx - swStartX, dy = ty - swStartY;
         if (abs(dx) > 55 && abs(dx) > abs(dy)) {
             int dir = (dx < 0) ? 1 : -1;  // swipe left = next (flick current screen away)
-            if (g_dev) {  // dev: 2-page loop (diagnostics <-> actions)
+            if (g_dev) {  // dev: page loop (diagnostics / actions / display)
                 if (!g_confirmReset) {
-                    g_devPage = (g_devPage + dir + 2) % 2;
+                    g_devPage = (g_devPage + dir + DEV_PAGES) % DEV_PAGES;
                     g_devRedraw = true;
                 }
             } else if (lmDemo()) {  // gallery: 4-page loop
@@ -362,7 +363,8 @@ void loop() {
             bool b = inRect(tx, ty, BTN_X - M, BTN_B_Y - M, BTN_W + 2 * M, BTN_H + 2 * M);
             if (a) {  // CONFIRM reset
                 displaySplash("RESETTING", "");
-                bootlogSetEnabled(false);  // factory reset clears the boot-log toggle too
+                bootlogSetEnabled(false);            // clear the boot-log toggle too
+                displaySetRotation(DISPLAY_ROTATION);  // and the rotation setting
                 lmFactoryReset();
                 delay(400);
                 ESP.restart();
@@ -385,6 +387,13 @@ void loop() {
                 tapConsumed = true;
             } else if (c) {  // RESET -> confirm
                 g_confirmReset = true;
+                g_devRedraw = true;
+                tapConsumed = true;
+            }
+        } else if (g_devPage == 2) {  // display page: ROTATE cycles the orientation
+            bool b = inRect(tx, ty, BTN_X - M, DEV_BTN_B_Y - M, BTN_W + 2 * M, BTN_H + 2 * M);
+            if (b) {
+                displaySetRotation((displayRotation() + 1) & 3);  // touch follows automatically
                 g_devRedraw = true;
                 tapConsumed = true;
             }
@@ -448,11 +457,13 @@ void loop() {
     if (g_dev) {
         bool anim = (g_devPage == 0 && !g_confirmReset);  // info page refreshes live values
         if (g_devRedraw || (anim && now - g_lastDevRender > 250)) {
-            displaySetPageIndicator(g_devPage, 2);
+            displaySetPageIndicator(g_devPage, DEV_PAGES);
             if (g_confirmReset)
                 displayResetConfirm();
             else if (g_devPage == 1)
                 displayDevActions(lmDemo(), bootlogEnabled());
+            else if (g_devPage == 2)
+                displayDevDisplay(displayRotation());
             else
                 displayDevInfo(lmState(), down ? 1 : 0, lmDemo());
             g_lastDevRender = now;

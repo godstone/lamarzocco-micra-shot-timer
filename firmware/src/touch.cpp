@@ -4,6 +4,7 @@
 #include <Wire.h>
 
 #include "config.h"
+#include "display.h"  // displayRotation(): touch is remapped to match the screen
 #include "pin_config.h"
 #include "log.h"
 
@@ -49,9 +50,9 @@ bool touchPoint(int *x, int *y) {
     int ry = ((yh & 0x0F) << 8) | yl;
 
     // The panel reports raw (rotation-0) coordinates; rotate them to match the on-screen
-    // orientation (canvas->setRotation(DISPLAY_ROTATION)), so taps/swipes line up.
+    // orientation (canvas->setRotation), so taps/swipes line up in every rotation.
     const int N = LCD_WIDTH - 1;  // square panel
-    switch (DISPLAY_ROTATION & 3) {
+    switch (displayRotation() & 3) {
         case 1: *x = ry;     *y = N - rx; break;
         case 2: *x = N - rx; *y = N - ry; break;
         case 3: *x = N - ry; *y = rx;     break;

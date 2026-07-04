@@ -21,6 +21,14 @@ void displayDevInfo(const BrewState &s, int touchPoints, bool demoEnabled);
 // Develop mode page 2: big DEMO / BOOTLOG toggles + RESET button.
 void displayDevActions(bool demoEnabled, bool bootlogOn);
 
+// Develop mode page 3: screen orientation (ROTATE button cycles 0/90/180/270).
+void displayDevDisplay(int rotation);
+
+// Screen rotation, runtime + persisted (default DISPLAY_ROTATION). Applies immediately;
+// callers must repaint. touchPoint() reads displayRotation() so touch stays aligned.
+void displaySetRotation(int rotation);
+int displayRotation();
+
 // Boot-log console: recent LOG lines, live while starting up (see bootlog.h).
 void displayBootlog();
 

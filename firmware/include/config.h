@@ -6,8 +6,9 @@
 #define DISPLAY_BRIGHTNESS 140
 #endif
 
-// Screen rotation 0-3 (software, done on the canvas — the CO5300 has no HW rotation).
+// Default screen rotation 0-3 (software, on the canvas — the CO5300 has no HW rotation).
 // 0 = cable on the left. Use 1 or 3 to put the cable at the bottom/top; 2 = flip 180.
+// Runtime-changeable (and persisted) from the dev DISPLAY page; this is only the default.
 #define DISPLAY_ROTATION 1
 
 // Seconds for the coffee-fill animation to rise from empty (bottom) to full (top).
