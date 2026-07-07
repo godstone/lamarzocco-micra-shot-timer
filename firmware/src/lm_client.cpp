@@ -358,7 +358,13 @@ static bool authedPost(const String &url, const String &body) {
     addSignedHeaders(http);
     http.addHeader("Authorization", "Bearer " + g_access);
     int code = http.POST((uint8_t *)body.c_str(), body.length());
+    // The command endpoint answers with a CommandResponse list: [{"id":...,"status":...}].
+    // 2xx only means "accepted" — the real verdict arrives async on the websocket `commands`
+    // array (see parseDashboard) — so keep the body for the log.
+    String resp = http.getString();
+    LOGF("[live] cmd POST -> HTTP %d %s\n", code, resp.c_str());
     http.end();
+    if (code == 401) g_access = "";  // token rejected; force re-sign-in next time
     if (code < 200 || code >= 300) {
         char e[48];
         snprintf(e, sizeof(e), "cmd HTTP %d", code);
@@ -395,6 +401,16 @@ static void parseDashboard(const String &payload) {
     uint64_t coffReadyMs = 0, steamReadyMs = 0;
     const char *bfStatus = "";
     uint64_t bfLastCleanMs = 0;
+
+    // Command acknowledgements: after a command POST, the cloud reports the actual outcome
+    // here (status Success/Error + error details). Log it — this is the only place the
+    // machine's verdict on our backflush command is visible.
+    JsonArray cmds = doc["commands"].as<JsonArray>();
+    if (!cmds.isNull())
+        for (JsonObject c : cmds) {
+            LOGF("[live] cmd ack id=%s status=%s err=%s\n", (const char *)(c["id"] | ""),
+                 (const char *)(c["status"] | ""), (const char *)(c["errorCode"] | ""));
+        }
 
     JsonArray widgets = doc["widgets"].as<JsonArray>();
     if (!widgets.isNull())
