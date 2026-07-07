@@ -66,6 +66,15 @@
 #define DEV_BTN_B_Y 213
 #define DEV_BTN_C_Y 306
 
+// Theme settings page: 6 scheme swatches in a 2x3 grid (kept inside the round panel).
+#define THEME_SW_W 150
+#define THEME_SW_H 64
+#define THEME_SW_X0 70   // left column
+#define THEME_SW_X1 246  // right column
+#define THEME_SW_Y0 130  // rows top->bottom
+#define THEME_SW_Y1 206
+#define THEME_SW_Y2 282
+
 // Boot-log console (dev toggle): if nobody taps it away, leave it this long after power-on.
 #define BOOTLOG_HOLD_MS 120000
 

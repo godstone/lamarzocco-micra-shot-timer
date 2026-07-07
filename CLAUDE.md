@@ -38,9 +38,13 @@ Reset into the app without flashing: open the port with pyserial and pulse `rts=
 
 - **main.cpp** — everything runs in one `loop()` on core 1: mode state machine
   (idle → brew → frozen), gestures (swipe carousel, long-press = dev mode, double-tap = close),
-  idle pages (status / stats / backflush), 2-page dev mode, demo gallery, boot-log console.
+  idle pages (status / stats / backflush / theme / dark-light), 3-page dev mode, demo gallery,
+  boot-log console.
 - **display.\*** — all rendering into a PSRAM `Arduino_Canvas`, flushed per frame (Arduino_GFX;
-  CO5300 or SH8601 driver over QSPI, switch via `-DUSE_CO5300`).
+  CO5300 or SH8601 driver over QSPI, switch via `-DUSE_CO5300`). Owns the theme system: 6 schemes
+  (Micra machine colors) × dark/light, loaded into the `COL_*` globals by `applyTheme()`;
+  persisted in NVS ("display"/"scheme","dark"). Status colors (OK/WARN/ERR) are fixed semantics —
+  never theme them per scheme.
 - **lm_client.\*** — the data source. DEMO simulation + LIVE cloud client. LIVE runs a FreeRTOS
   task pinned to **core 0**: auth/token, STOMP-over-wss websocket (ping + staleness watchdog),
   REST-poll fallback, stats fetch, outbound command queue (backflush).

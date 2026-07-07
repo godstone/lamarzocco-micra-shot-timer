@@ -25,11 +25,12 @@ static uint32_t g_lastDevRender = 0;
 static bool inRect(int x, int y, int rx, int ry, int rw, int rh) {
     return x >= rx && x <= rx + rw && y >= ry && y <= ry + rh;
 }
-#define IDLE_PAGES 3  // swipe carousel: 0 = status (off/readiness), 1 = stats, 2 = backflush
+// swipe carousel: 0 = status (off/readiness), 1 = stats, 2 = backflush, 3 = theme, 4 = dark/light
+#define IDLE_PAGES 5
 
 static int g_idleScreen = -1;  // last rendered screen id; -1 forces redraw
 static long g_idleData = -1;
-static int g_idlePage = 0;  // 0 = status page (machine-off or readiness), 1 = stats, 2 = backflush
+static int g_idlePage = 0;  // see IDLE_PAGES comment above
 static uint32_t g_idleLastRender = 0;
 
 // Backflush page UI state: 0 = idle/START, 1 = confirm modal, 2 = running/started, 3 = done.
@@ -143,7 +144,7 @@ static void renderIdle() {
             g_idleScreen = 3;
             g_idleData = key;
         }
-    } else {  // backflush / cleaning page
+    } else if (g_idlePage == 2) {  // backflush / cleaning page
         bool running = (g_bfUi == 2 || s.backflushStatus != 0);
         if (running) {  // animate the spinner
             if (now - g_idleLastRender >= 120) {
@@ -159,6 +160,20 @@ static void renderIdle() {
                 g_idleScreen = 4;
                 g_idleData = key;
             }
+        }
+    } else if (g_idlePage == 3) {  // theme settings (scheme swatches)
+        long key = (long)displayScheme() * 2 + (displayDarkMode() ? 1 : 0);
+        if (g_idleScreen != 5 || g_idleData != key) {
+            displaySettingsTheme();
+            g_idleScreen = 5;
+            g_idleData = key;
+        }
+    } else {  // display settings (dark / light)
+        long key = displayDarkMode() ? 1 : 0;
+        if (g_idleScreen != 6 || g_idleData != key) {
+            displaySettingsMode();
+            g_idleScreen = 6;
+            g_idleData = key;
         }
     }
 }
@@ -365,6 +380,8 @@ void loop() {
                 displaySplash("RESETTING", "");
                 bootlogSetEnabled(false);            // clear the boot-log toggle too
                 displaySetRotation(DISPLAY_ROTATION);  // and the rotation setting
+                displaySetScheme(0);                 // and the theme (RED, dark)
+                displaySetDarkMode(true);
                 lmFactoryReset();
                 delay(400);
                 ESP.restart();
@@ -423,6 +440,34 @@ void loop() {
                 g_idleScreen = -1;
                 tapConsumed = true;
             }
+        }
+    }
+
+    // Theme settings taps (real idle, page 3): 2x3 swatch grid -> pick a scheme.
+    if (rising && !g_dev && !lmDemo() && g_idlePage == 3 && !tapConsumed) {
+        const int M = 12;
+        static const int xs[2] = {THEME_SW_X0, THEME_SW_X1};
+        static const int ys[3] = {THEME_SW_Y0, THEME_SW_Y1, THEME_SW_Y2};
+        for (int i = 0; i < THEME_SCHEMES; i++) {
+            if (inRect(tx, ty, xs[i % 2] - M, ys[i / 2] - M, THEME_SW_W + 2 * M,
+                       THEME_SW_H + 2 * M)) {
+                displaySetScheme(i);
+                g_idleScreen = -1;
+                tapConsumed = true;
+                break;
+            }
+        }
+    }
+
+    // Display-mode settings taps (real idle, page 4): DARK / LIGHT buttons.
+    if (rising && !g_dev && !lmDemo() && g_idlePage == 4 && !tapConsumed) {
+        const int M = 12;
+        bool a = inRect(tx, ty, BTN_X - M, BTN_A_Y - M, BTN_W + 2 * M, BTN_H + 2 * M);
+        bool b = inRect(tx, ty, BTN_X - M, BTN_B_Y - M, BTN_W + 2 * M, BTN_H + 2 * M);
+        if (a || b) {
+            displaySetDarkMode(a);
+            g_idleScreen = -1;
+            tapConsumed = true;
         }
     }
 

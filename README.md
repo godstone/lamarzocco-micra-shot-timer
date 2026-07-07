@@ -16,8 +16,8 @@ Stylized renders of the on-device screens (round 466×466 panel). Regenerate wit
 | ![Readiness](docs/screenshots/04-readiness.png) | ![Stats](docs/screenshots/05-stats.png) | ![Machine off](docs/screenshots/06-machine-off.png) |
 | **Dev · actions** | **Dev · diagnostics** | **Dev · reset confirm** |
 | ![Dev actions](docs/screenshots/07-dev-actions.png) | ![Dev info](docs/screenshots/08-dev-info.png) | ![Reset confirm](docs/screenshots/09-reset-confirm.png) |
-| **Dev · display** | | |
-| ![Dev display](docs/screenshots/10-dev-display.png) | | |
+| **Dev · display** | **Settings · theme** | |
+| ![Dev display](docs/screenshots/10-dev-display.png) | ![Theme settings](docs/screenshots/11-settings-theme.png) | |
 
 ## Features
 
@@ -25,13 +25,18 @@ Stylized renders of the on-device screens (round 466×466 panel). Regenerate wit
   bottom→top (crema band + wavy surface), with the elapsed time counting up in the center (Luckiest
   Guy font). Detected in ~1–2 s via the cloud **websocket**.
 - **Pre-infusion phase** — reads the pre-brew/pre-infusion time you configured in the app and shows
-  a realtime pre-infusion animation (teal ring + drips) for those first seconds, then hands off to
+  a realtime pre-infusion animation (ring + drips) for those first seconds, then hands off to
   the fill. Auto-adapts to whatever the machine reports.
 - **Over-extraction warning** — past ~30 s the coffee washes out to a pale "watery" tone and the
   timer shifts white → amber → red.
-- **Heat-up rings** — two arcs deplete from full as the boilers warm: **machine** (pink/purple) and
-  **steam** (blue), with M:SS countdowns; full → gone when ready. The steam ring also appears on the
-  shot screen if you pull before steam is ready.
+- **Heat-up rings** — two arcs deplete from full as the boilers warm: **machine** (accent) and
+  **steam** (secondary accent), with M:SS countdowns; full → gone when ready. The steam ring also
+  appears on the shot screen if you pull before steam is ready.
+- **Color themes** — six schemes matching the Linea Micra machine colors (red, yellow, blue,
+  white, gray for the metallic finishes, black), each with a dark and a light palette. Pick the
+  scheme and dark/light mode right on the device (two settings pages in the swipe carousel;
+  persisted). Status colors keep fixed meanings in every scheme: green = ready, amber = warming,
+  red = error/over-extraction.
 - **Shot stats** — shots today (hero + crema dots) and lifetime total (from the cloud counters).
 - **Backflush page** — start the machine's backflush cleaning cycle from the display (confirm
   modal, live CLEANING spinner from the cloud status, DONE screen, "cleaned N days ago").

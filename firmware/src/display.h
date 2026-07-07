@@ -29,6 +29,23 @@ void displayDevDisplay(int rotation);
 void displaySetRotation(int rotation);
 int displayRotation();
 
+// Color schemes, one per Linea Micra machine color (the metallic finishes share GRAY).
+// Each scheme has a dark and a light palette; status colors (ready-green, warming-amber,
+// error-red) keep fixed semantics across all schemes. Persisted; apply immediately but
+// callers must repaint.
+#define THEME_SCHEMES 6  // 0=RED 1=YELLOW 2=BLUE 3=WHITE 4=GRAY 5=BLACK
+void displaySetScheme(int scheme);
+int displayScheme();
+const char *displaySchemeName(int scheme);
+void displaySetDarkMode(bool dark);
+bool displayDarkMode();
+
+// Settings page: the 6 scheme swatches (tap targets, see THEME_SW_* in config.h).
+void displaySettingsTheme();
+
+// Settings page: DARK / LIGHT mode toggle (buttons at BTN_A_Y / BTN_B_Y).
+void displaySettingsMode();
+
 // Boot-log console: recent LOG lines, live while starting up (see bootlog.h).
 void displayBootlog();
 
