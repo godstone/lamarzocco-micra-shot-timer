@@ -102,12 +102,15 @@ static void renderIdle() {
     uint32_t now = millis();
     displaySetConn(s.connMode);
 
-    // WiFi captive portal open -> show the setup prompt (overrides everything).
+    // WiFi captive portal open -> show the setup prompt (overrides everything). The status
+    // line tracks progress: phone joined the portal AP / WiFi connected (about to close).
     if (s.wifiPortal) {
-        if (g_idleScreen != 9) {
+        int phase = s.networkReady || s.ip[0] ? 2 : (s.wifiPortalClients > 0 ? 1 : 0);
+        if (g_idleScreen != 9 || g_idleData != phase) {
             displaySetPageIndicator(0, 0);
-            displayWifiSetup();
+            displayWifiSetup(phase);
             g_idleScreen = 9;
+            g_idleData = phase;
         }
         return;
     }

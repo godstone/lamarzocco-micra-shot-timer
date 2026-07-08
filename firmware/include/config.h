@@ -26,6 +26,14 @@
 // power on/off, brew start/stop, boiler ready, backflush, WiFi portal opening.
 #define STANDBY_AFTER_MS (15UL * 60UL * 1000UL)
 
+// Multi-WiFi: remember up to this many networks (most-recently-used order). Boot connects to
+// whichever is visible (best signal first); the captive portal only opens when none is. While
+// disconnected, rescan for known networks this often — the longer interval applies while the
+// portal is open, so scans don't stall its web UI while someone is configuring.
+#define WIFI_MAX_NETWORKS 5
+#define WIFI_ROAM_RETRY_MS 30000
+#define WIFI_PORTAL_ROAM_MS 60000
+
 // NTP — needed for TLS cert validity and to compute elapsed = now - brewingStartTime.
 #define NTP_SERVER "pool.ntp.org"
 #define GMT_OFFSET_SEC 0

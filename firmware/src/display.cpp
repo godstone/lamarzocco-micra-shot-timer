@@ -364,7 +364,7 @@ void displayMachineOff() {
     canvas->flush();
 }
 
-void displayWifiSetup() {
+void displayWifiSetup(int phase) {
     int cy = canvas->height() / 2;
     canvas->fillScreen(COL_BG);
     canvas->drawCircle(canvas->width() / 2, cy, canvas->width() / 2 - 4, COL_ACCENT2);
@@ -372,6 +372,13 @@ void displayWifiSetup() {
     drawCenteredClassic("on your phone, join wifi:", cy - 16, 2, COL_DIM);
     drawCenteredClassic("LaMarzocco-Display", cy + 18, 2, COL_FG);
     drawCenteredClassic("then pick your network", cy + 64, 2, COL_DIM);
+    // Live status so the user sees the device reacting (joined phone, successful connect).
+    if (phase == 2)
+        drawCenteredClassic("connected!", cy + 118, 2, COL_OK);
+    else if (phase == 1)
+        drawCenteredClassic("phone connected...", cy + 118, 2, COL_OK);
+    else
+        drawCenteredClassic("waiting for phone...", cy + 118, 2, COL_DIM);
     canvas->flush();
 }
 

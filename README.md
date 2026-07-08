@@ -50,7 +50,10 @@ Stylized renders of the on-device screens (round 466×466 panel). Regenerate wit
 - **Screen standby** — after 15 min with no touch and no machine events the AMOLED goes fully
   dark (pixels off, for panel longevity); any touch or machine activity (power on, brew start,
   boiler ready, backflush) wakes it instantly.
-- **WiFi captive portal** (WiFiManager) — set WiFi from your phone, no re-flash.
+- **Multi-WiFi + captive portal** — remembers the last 5 networks; on boot it connects to
+  whichever is visible (best signal first), so the device moves between locations without
+  reconfiguration. The setup portal (WiFiManager, from your phone, no re-flash) only opens when
+  no known network is around — and closes itself if one appears.
 - **Demo mode** — a self-contained animated preview of every screen.
 
 See **[docs/PRODUCT.md](docs/PRODUCT.md)** for the full screen-by-screen guide and gestures.

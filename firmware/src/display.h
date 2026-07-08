@@ -64,8 +64,10 @@ void displayStatus(const BrewState &s);
 // Machine powered off / unreachable: machine illustration + "MACHINE OFF".
 void displayMachineOff();
 
-// WiFi captive-portal setup prompt (shown while the portal is open).
-void displayWifiSetup();
+// WiFi captive-portal setup prompt (shown while the portal is open), with a live status
+// line so the user sees progress. phase: 0 = waiting for a phone to join the portal AP,
+// 1 = phone joined (configuring), 2 = WiFi connected (portal about to close).
+void displayWifiSetup(int phase);
 
 // Fancy idle stats: shots today (hero) + lifetime total.
 void displayStats(int shotsToday, int shotsTotal);

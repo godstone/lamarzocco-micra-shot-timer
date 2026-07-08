@@ -13,6 +13,7 @@ struct BrewState {
     char ip[16] = "";           // local IP when connected (dev screen)
     bool signedIn = false;      // cloud token valid (dev screen)
     bool wifiPortal = false;    // WiFiManager captive portal currently open
+    uint8_t wifiPortalClients = 0;  // phones joined to the portal AP (setup-screen feedback)
 
     // Boiler readiness (shown on the idle/standby screen).
     bool coffeeReady = false;      // coffee boiler at temperature

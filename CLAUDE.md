@@ -47,7 +47,9 @@ Reset into the app without flashing: open the port with pyserial and pulse `rts=
   never theme them per scheme.
 - **lm_client.\*** — the data source. DEMO simulation + LIVE cloud client. LIVE runs a FreeRTOS
   task pinned to **core 0**: auth/token, STOMP-over-wss websocket (ping + staleness watchdog),
-  REST-poll fallback, stats fetch, outbound command queue (backflush).
+  REST-poll fallback, stats fetch, outbound command queue (backflush). Multi-WiFi: up to
+  `WIFI_MAX_NETWORKS` credentials in NVS ("wifis", MRU order) tried via WiFiMulti; the
+  WiFiManager portal is fallback-only and auto-closes when a known network reappears.
 - **lm_auth.\*** — on-device ECDSA-secp256r1 request signing (mbedTLS), ported from pylamarzocco.
 - **bootlog.\*** — persisted dev toggle; mirrors LOG lines to an on-screen console during boot.
 - **ca_certs.h** — pinned Amazon/Starfield root CAs for all lamarzocco.io TLS

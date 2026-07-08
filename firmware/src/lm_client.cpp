@@ -175,6 +175,7 @@ static float demoElapsed() {
 #include <HTTPClient.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
+#include <WiFiMulti.h>
 #include <Preferences.h>
 #include <WiFiManager.h>
 #include <esp_wifi.h>
@@ -205,6 +206,80 @@ static time_t g_tokenExp = 0;
 static bool g_liveStarted = false;
 static bool g_backflushRequest = false;  // set by lmRequestBackflush(); dispatched in liveTask
 static WiFiManager g_wm;
+
+// ---- Known WiFi networks (multi-location) ---------------------------------------------------
+// Up to WIFI_MAX_NETWORKS credentials in NVS ("wifis"), most-recently-used first. Boot tries
+// all of them via WiFiMulti (whichever is visible, best signal first); the captive portal only
+// opens when none is reachable, and any network configured there is added to the list — so
+// moving the device between locations never loses the other locations' credentials.
+static WiFiMulti g_wifiMulti;
+static int g_wifiKnown = 0;  // cached list size (avoid NVS reads in the task loop)
+
+static int wifiListCount() {
+    Preferences p;
+    p.begin("wifis", true);
+    int n = p.getInt("n", 0);
+    p.end();
+    return n > WIFI_MAX_NETWORKS ? WIFI_MAX_NETWORKS : n;
+}
+
+static void wifiListGet(int i, String &ssid, String &pass) {
+    char k[8];
+    Preferences p;
+    p.begin("wifis", true);
+    snprintf(k, sizeof(k), "s%d", i);
+    ssid = p.getString(k, "");
+    snprintf(k, sizeof(k), "p%d", i);
+    pass = p.getString(k, "");
+    p.end();
+}
+
+// Put `ssid` in slot 0 (most recently used), dropping the oldest entry past the cap.
+static void wifiListAdd(const String &ssid, const String &pass) {
+    if (ssid.isEmpty()) return;
+    String ss[WIFI_MAX_NETWORKS], pp[WIFI_MAX_NETWORKS];
+    int n = wifiListCount();
+    for (int i = 0; i < n; i++) wifiListGet(i, ss[i], pp[i]);
+    if (n > 0 && ss[0] == ssid && pp[0] == pass) return;  // already MRU — avoid flash wear
+
+    String os[WIFI_MAX_NETWORKS], op[WIFI_MAX_NETWORKS];
+    int m = 0;
+    os[m] = ssid;
+    op[m] = pass;
+    m++;
+    for (int i = 0; i < n && m < WIFI_MAX_NETWORKS; i++)
+        if (ss[i] != ssid) {  // drop any older copy of the same network
+            os[m] = ss[i];
+            op[m] = pp[i];
+            m++;
+        }
+
+    Preferences p;
+    p.begin("wifis", false);
+    p.putInt("n", m);
+    for (int i = 0; i < m; i++) {
+        char k[8];
+        snprintf(k, sizeof(k), "s%d", i);
+        p.putString(k, os[i]);
+        snprintf(k, sizeof(k), "p%d", i);
+        p.putString(k, op[i]);
+    }
+    p.end();
+    g_wifiKnown = m;
+    LOGF("[live] wifi list: '%s' saved (%d known)\n", ssid.c_str(), m);
+}
+
+// Register a network with WiFiMulti exactly once (it has no dedup of its own; without this,
+// every reconnect edge would append a duplicate). If a password changes for a known SSID,
+// WiFiMulti keeps the stale one until the next boot re-adds the list from NVS.
+static void wifiMultiAdd(const String &ssid, const String &pass) {
+    static String added[WIFI_MAX_NETWORKS * 2];
+    static int nAdded = 0;
+    for (int i = 0; i < nAdded; i++)
+        if (added[i] == ssid) return;
+    if (nAdded < (int)(sizeof(added) / sizeof(added[0]))) added[nAdded++] = ssid;
+    g_wifiMulti.addAP(ssid.c_str(), pass.c_str());
+}
 
 static void setError(const char *e) {
     lockState();
@@ -783,6 +858,32 @@ static void liveTask(void *) {
         if (!g_demoEnabled) {
             bool wifiUp = (WiFi.status() == WL_CONNECTED);
             bool clockOk = (time(nullptr) > 1700000000);
+
+            // Multi-wifi bookkeeping: whenever a connection comes up, promote its credentials
+            // to the top of the known list. This is also how portal-configured networks get in.
+            static bool prevWifiUp = false;
+            if (wifiUp && !prevWifiUp) {
+                wifiListAdd(WiFi.SSID(), WiFi.psk());
+                wifiMultiAdd(WiFi.SSID(), WiFi.psk());
+            }
+            prevWifiUp = wifiUp;
+
+            // Roam: while disconnected, periodically rescan for ANY known network (the ESP32's
+            // own auto-reconnect only retries the last one). Also runs with the portal open —
+            // arriving at a known location connects and closes it. run() blocks this task a
+            // few seconds; that's fine, there is nothing to poll without WiFi. NEVER while a
+            // phone is on the portal AP: the scan aborts the connect attempt WiFiManager makes
+            // right after the user hits save (seen live: repeated "Connect to new AP Failed").
+            static uint32_t roamAt = 0;
+            bool portal = g_wm.getConfigPortalActive();
+            bool portalBusy = portal && WiFi.softAPgetStationNum() > 0;
+            if (!wifiUp && !portalBusy && g_wifiKnown > 0 && (int32_t)(millis() - roamAt) >= 0) {
+                roamAt = millis() + (portal ? WIFI_PORTAL_ROAM_MS : WIFI_ROAM_RETRY_MS);
+                if (g_wifiMulti.run(8000) == WL_CONNECTED && portal) {
+                    LOGLN("[live] known wifi found -> closing portal");
+                    g_wm.stopConfigPortal();
+                }
+            }
             // Start SNTP once WiFi is up. Until the clock syncs, re-resolve every 20s (the
             // pool rotates dead members out on each DNS query); after sync, refresh the IP
             // every 12h so the hourly resyncs don't pin a member that has since died.
@@ -794,7 +895,8 @@ static void liveTask(void *) {
             }
 
             lockState();
-            g_state.wifiPortal = g_wm.getConfigPortalActive();
+            g_state.wifiPortal = portal;
+            g_state.wifiPortalClients = portalBusy ? WiFi.softAPgetStationNum() : 0;
             if (wifiUp)
                 strncpy(g_state.ip, WiFi.localIP().toString().c_str(), sizeof(g_state.ip) - 1);
             else
@@ -868,7 +970,10 @@ static void liveTask(void *) {
             }
         }
         // Websocket: service frames promptly. REST: fast while brewing, relaxed otherwise.
+        // Portal open: spin fast so g_wm.process() serves the captive UI without lag (at the
+        // 2s cadence every page load and the post-save connect crawled).
         uint32_t d = g_wsUp ? 30 : (brewing ? 600 : LIVE_POLL_INTERVAL_MS);
+        if (g_wm.getConfigPortalActive()) d = 30;
         vTaskDelay(pdMS_TO_TICKS(d));
     }
 }
@@ -914,16 +1019,16 @@ static void liveBegin() {
     });
     WiFi.mode(WIFI_STA);
 
-    // One-time seed: if no WiFi creds are stored yet, persist the ones from secrets.h so the
-    // first boot at home connects automatically. After the user (re)configures via the portal,
-    // those saved creds win and we never overwrite them.
-    wifi_config_t cfg = {};
-    esp_wifi_get_config(WIFI_IF_STA, &cfg);
-    bool stored = cfg.sta.ssid[0] != 0;
-    if (!stored && String(WIFI_SSID) != String("YOUR_WIFI_SSID")) {
-        WiFi.persistent(true);
-        WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-        LOGF("[live] seeded WiFi from secrets ('%s')\n", WIFI_SSID);
+    // One-time imports into the known-networks list: credentials stored by a pre-multi-wifi
+    // firmware (the single ESP32 slot), else the compiled secrets.h pair. After that the list
+    // is maintained purely at runtime (portal saves + connect promotions).
+    if (wifiListCount() == 0) {
+        wifi_config_t cfg = {};
+        esp_wifi_get_config(WIFI_IF_STA, &cfg);
+        if (cfg.sta.ssid[0])
+            wifiListAdd((const char *)cfg.sta.ssid, (const char *)cfg.sta.password);
+        else if (String(WIFI_SSID) != String("YOUR_WIFI_SSID"))
+            wifiListAdd(WIFI_SSID, WIFI_PASSWORD);
     }
 
     // NTP is started from liveTask once WiFi is up (see startSntp) — NOT here. Starting SNTP
@@ -931,12 +1036,26 @@ static void liveBegin() {
     // connect runs, and Arduino's hostByName() calls dns_clear_cache() on IP-state changes,
     // which fires that pending SNTP callback on our task -> lwIP thread-safety assert -> reboot.
 
-    // WiFiManager: connect with stored creds, else open captive portal "LaMarzocco-Display".
-    g_wm.setConfigPortalBlocking(false);  // non-blocking; serviced via g_wm.process()
-    g_wm.setConfigPortalTimeout(0);       // keep the portal open until configured
+    // Try every known network: one scan, best-signal known AP first (WiFiMulti).
+    g_wifiKnown = wifiListCount();
+    for (int i = 0; i < g_wifiKnown; i++) {
+        String s, pw;
+        wifiListGet(i, s, pw);
+        if (s.length()) wifiMultiAdd(s, pw);
+    }
+    bool ok = false;
+    if (g_wifiKnown > 0) {
+        LOGF("[live] wifi: trying %d known network(s)\n", g_wifiKnown);
+        ok = (g_wifiMulti.run(12000) == WL_CONNECTED);
+    }
+
+    // Captive portal fallback (non-blocking; serviced via g_wm.process() in liveTask). While
+    // it's open, liveTask keeps rescanning for known networks and closes it when one appears.
+    g_wm.setConfigPortalBlocking(false);
+    g_wm.setConfigPortalTimeout(0);  // keep the portal open until configured
     g_wm.setConnectTimeout(15);
     g_wm.setHostname("lamarzocco-display");
-    bool ok = g_wm.autoConnect(WIFI_PORTAL_AP);
+    if (!ok) g_wm.startConfigPortal(WIFI_PORTAL_AP);
     LOGF("[live] wifi %s; portal %s\n", ok ? "connected" : "not yet",
                   g_wm.getConfigPortalActive() ? "OPEN (join " WIFI_PORTAL_AP ")" : "closed");
 
@@ -1014,6 +1133,12 @@ void lmFactoryReset() {
 #ifdef HAVE_SECRETS
     g_wm.resetSettings();          // clear stored WiFi credentials
     g_prefs.clear();               // clear installation key + shot stats (+ future creds)
+    {
+        Preferences p;             // clear the known-networks list (multi-wifi)
+        p.begin("wifis", false);
+        p.clear();
+        p.end();
+    }
     WiFi.disconnect(true, true);   // erase persisted WiFi config
 #endif
 }

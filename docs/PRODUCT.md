@@ -15,7 +15,7 @@ screen shows and how to interact with the device. (For build/flash and architect
 | Pulling a shot | Pre-infusion phase, then coffee fills bottom→top with centered timer |
 | Just finished | Final shot time held ~15s, then back to standby |
 | 15 min without activity | Screen fully dark (standby) — tap or machine activity wakes it |
-| WiFi not configured | "WIFI SETUP — join LaMarzocco-Display" (captive portal) |
+| No known WiFi in range | "WIFI SETUP — join LaMarzocco-Display" (captive portal; the device remembers up to 5 networks and auto-connects to whichever is visible). A status line shows progress: waiting for phone → phone connected → connected! |
 
 ## Screens
 
@@ -131,9 +131,9 @@ close with a quick **double-tap**.
 
 - **DEMO ON/OFF** — toggle demo mode.
 - **BOOTLOG ON/OFF** — persisted toggle for the boot-log console shown on future startups.
-- **RESET DEVICE** — factory reset (confirm modal): clears WiFi credentials, the LM installation
-  key, saved stats, the boot-log toggle, the rotation setting, and the theme (back to RED, dark),
-  then restarts into the captive portal.
+- **RESET DEVICE** — factory reset (confirm modal): clears all remembered WiFi networks, the LM
+  installation key, saved stats, the boot-log toggle, the rotation setting, and the theme (back
+  to RED, dark), then restarts into the captive portal.
 
 **Page 3 — display**:
 
