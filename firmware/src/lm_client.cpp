@@ -6,13 +6,25 @@
 #include "config.h"
 #include "log.h"
 
-// secrets.h is optional: without it, LIVE mode is unavailable and the device runs the demo.
+// secrets.h is optional and only SEEDS the runtime settings (WiFi + LM account) on first
+// boot — developer convenience. Without it the device is provisioned entirely from the
+// phone: the captive portal collects WiFi and the LM account, the installation key is
+// generated + registered on-device, and the machine serial is auto-discovered after sign-in.
 #if __has_include("secrets.h")
 #include "secrets.h"
-#define HAVE_SECRETS 1
 #endif
-
-// Timezone for the "shots today" trend query — set via .env -> secrets.h; default if unset.
+#ifndef WIFI_SSID
+#define WIFI_SSID "YOUR_WIFI_SSID"
+#define WIFI_PASSWORD ""
+#endif
+#ifndef LM_USERNAME
+#define LM_USERNAME ""
+#define LM_PASSWORD ""
+#endif
+#ifndef LM_SERIAL
+#define LM_SERIAL ""
+#endif
+// Timezone for the "shots today" trend query — portal-configurable; this is the default.
 #ifndef LM_TIMEZONE
 #define LM_TIMEZONE "Europe/Zurich"
 #endif
@@ -170,7 +182,6 @@ static float demoElapsed() {
 }
 
 // ============================ LIVE CLOUD CLIENT ==============================
-#ifdef HAVE_SECRETS
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
 #include <WiFi.h>
@@ -288,6 +299,66 @@ static void setError(const char *e) {
     unlockState();
 }
 
+// ---- LM account (runtime, phone-provisionable) -----------------------------------------------
+// e-mail/password/serial/timezone live in NVS ("lmacct"), entered on the captive portal — or
+// seeded once from secrets.h in developer builds. Empty user = not provisioned: the portal
+// stays open and liveTask skips all cloud work. The password is stored in NVS plaintext, the
+// same trust level as the WiFi credentials next to it.
+static String g_lmUser, g_lmPass, g_lmSerial, g_lmTz = LM_TIMEZONE;
+static volatile bool g_portalToggleRequest = false;  // dev-page button (lmOpenSetupPortal)
+static bool g_portalManual = false;  // portal opened by that button (suppress auto-close)
+
+static void accountLoad() {
+    Preferences p;
+    p.begin("lmacct", true);
+    g_lmUser = p.getString("user", "");
+    g_lmPass = p.getString("pass", "");
+    g_lmSerial = p.getString("serial", "");
+    g_lmTz = p.getString("tz", LM_TIMEZONE);
+    p.end();
+}
+
+static void accountSave() {
+    Preferences p;
+    p.begin("lmacct", false);
+    p.putString("user", g_lmUser);
+    p.putString("pass", g_lmPass);
+    p.putString("serial", g_lmSerial);
+    p.putString("tz", g_lmTz);
+    p.end();
+}
+
+// Portal fields for the account, shown under the WiFi settings. The password field is never
+// prefilled (the portal is an open AP; don't serve the stored password back out) — leaving it
+// empty on save keeps the existing one.
+static WiFiManagerParameter g_pUser("lmuser", "La Marzocco e-mail", "", 64);
+static WiFiManagerParameter g_pPass("lmpass", "La Marzocco password", "", 64,
+                                    " type=\"password\"");
+static WiFiManagerParameter g_pSerial("lmserial", "Machine serial (empty = auto-detect)", "", 24);
+static WiFiManagerParameter g_pTz("lmtz", "Timezone (for daily stats)", "", 40);
+
+// Fires when the portal's WiFi or params form is saved. Runs on liveTask (g_wm.process()).
+static void onPortalSaved() {
+    String u = g_pUser.getValue(), pw = g_pPass.getValue();
+    String sn = g_pSerial.getValue(), tz = g_pTz.getValue();
+    u.trim();
+    pw.trim();
+    sn.trim();
+    tz.trim();
+    if (u.length()) g_lmUser = u;
+    if (pw.length()) g_lmPass = pw;  // empty = keep current (field is never prefilled)
+    g_lmSerial = sn;                 // empty = auto-discover on the next sign-in
+    if (tz.length()) g_lmTz = tz;
+    accountSave();
+    g_access = "";  // force a fresh sign-in with the new credentials
+    g_portalManual = false;  // setup finished -> the auto-close rule may close the portal
+    lockState();
+    g_state.signedIn = false;
+    unlockState();
+    LOGF("[live] account saved (user=%s serial=%s tz=%s)\n", g_lmUser.c_str(),
+         g_lmSerial.length() ? g_lmSerial.c_str() : "(auto)", g_lmTz.c_str());
+}
+
 // TLS trust for all lamarzocco.io connections: pinned Amazon/Starfield roots (ca_certs.h).
 // NTP runs before any request is attempted, so certificate validity checks work.
 static void tlsConfig(WiFiClientSecure &c) {
@@ -343,8 +414,8 @@ static bool postToken(const char *path, const String &body) {
 
 static bool signIn() {
     JsonDocument d;
-    d["username"] = LM_USERNAME;
-    d["password"] = LM_PASSWORD;
+    d["username"] = g_lmUser;
+    d["password"] = g_lmPass;
     String body;
     serializeJson(d, body);
     bool ok = postToken("/auth/signin", body);
@@ -354,7 +425,7 @@ static bool signIn() {
 
 static bool refreshToken() {
     JsonDocument d;
-    d["username"] = LM_USERNAME;
+    d["username"] = g_lmUser;
     d["refreshToken"] = g_refresh;
     String body;
     serializeJson(d, body);
@@ -452,7 +523,7 @@ static bool authedPost(const String &url, const String &body) {
 // Fire the backflush cleaning command (POST .../command/CoffeeMachineBackFlushStartCleaning).
 static void sendBackflush() {
     bool ok = authedPost(
-        String(LM_BASE) + "/things/" + LM_SERIAL + "/command/CoffeeMachineBackFlushStartCleaning",
+        String(LM_BASE) + "/things/" + g_lmSerial + "/command/CoffeeMachineBackFlushStartCleaning",
         "{\"enabled\":true}");
     LOGF("[live] backflush start -> %s\n", ok ? "OK" : "FAILED");
 }
@@ -588,7 +659,7 @@ static void parseDashboard(const String &payload) {
 
 // Pull "shots today" (trend, days=1) and lifetime total (counter).
 static void fetchStats() {
-    String c = authedGet(String(LM_BASE) + "/things/" + LM_SERIAL +
+    String c = authedGet(String(LM_BASE) + "/things/" + g_lmSerial +
                           "/stats/COFFEE_AND_FLUSH_COUNTER/1");
     if (c.length()) {
         JsonDocument doc;
@@ -602,8 +673,8 @@ static void fetchStats() {
             }
         }
     }
-    String t = authedGet(String(LM_BASE) + "/things/" + LM_SERIAL +
-                         "/stats/COFFEE_AND_FLUSH_TREND/1?days=1&timezone=" + LM_TIMEZONE);
+    String t = authedGet(String(LM_BASE) + "/things/" + g_lmSerial +
+                         "/stats/COFFEE_AND_FLUSH_TREND/1?days=1&timezone=" + g_lmTz);
     if (t.length()) {
         JsonDocument doc;
         if (deserializeJson(doc, t) == DeserializationError::Ok) {
@@ -778,7 +849,7 @@ static bool wsConnect() {
 
     char sid[40];
     snprintf(sid, sizeof(sid), "%08x%08x", (unsigned)esp_random(), (unsigned)esp_random());
-    String sub = String("SUBSCRIBE\ndestination:/ws/sn/") + LM_SERIAL + "/dashboard\nack:auto\nid:" +
+    String sub = String("SUBSCRIBE\ndestination:/ws/sn/") + g_lmSerial + "/dashboard\nack:auto\nid:" +
                  sid + "\ncontent-length:0\n\n";
     sub += '\0';
     wsSendFrame(sub, 0x81);
@@ -846,10 +917,26 @@ static bool startSntp() {
 
 static void liveTask(void *) {
     uint32_t nextStatsAt = 0;  // next fetchStats() time (millis)
+    uint32_t nextRestAt = 0;   // next REST dashboard poll (decoupled from the loop cadence)
     uint32_t regRetryAt = 0;   // registration backoff
     uint32_t sntpRetryAt = 0;  // next SNTP (re)start / pool re-resolve time
     for (;;) {
         g_wm.process();  // service the captive portal / DNS while it's open
+
+        // Dev-page "SETUP PORTAL" button: toggle the portal to fix credentials in place.
+        if (g_portalToggleRequest) {
+            g_portalToggleRequest = false;
+            if (g_wm.getConfigPortalActive()) {
+                g_portalManual = false;
+                g_wm.stopConfigPortal();
+                LOGLN("[live] setup portal closed (dev page)");
+            } else {
+                if (g_wm.getWebPortalActive()) g_wm.stopWebPortal();  // one server at a time
+                g_portalManual = true;
+                g_wm.startConfigPortal(WIFI_PORTAL_AP);
+                LOGLN("[live] setup portal opened (dev page)");
+            }
+        }
 
         lockState();
         bool brewing = g_state.brewing;  // snapshot for this iteration
@@ -879,10 +966,24 @@ static void liveTask(void *) {
             bool portalBusy = portal && WiFi.softAPgetStationNum() > 0;
             if (!wifiUp && !portalBusy && g_wifiKnown > 0 && (int32_t)(millis() - roamAt) >= 0) {
                 roamAt = millis() + (portal ? WIFI_PORTAL_ROAM_MS : WIFI_ROAM_RETRY_MS);
-                if (g_wifiMulti.run(8000) == WL_CONNECTED && portal) {
-                    LOGLN("[live] known wifi found -> closing portal");
-                    g_wm.stopConfigPortal();
-                }
+                g_wifiMulti.run(8000);
+            }
+
+            // Close the portal once there is nothing left to configure (WiFi up + account
+            // saved) — unless it was opened deliberately from the dev page.
+            bool haveAccount = g_lmUser.length() > 0;
+            if (portal && wifiUp && haveAccount && !g_portalManual) {
+                LOGLN("[live] setup complete -> closing portal");
+                g_wm.stopConfigPortal();
+                portal = false;
+            }
+
+            // Keep the setup pages reachable on the LAN (http://<ip>/param — the QR settings
+            // page points there), so the LM account can be added/fixed from a phone anytime.
+            if (wifiUp && !portal && !g_wm.getWebPortalActive()) {
+                g_wm.startWebPortal();
+                LOGF("[live] web portal up: http://%s/param\n",
+                     WiFi.localIP().toString().c_str());
             }
             // Start SNTP once WiFi is up. Until the clock syncs, re-resolve every 20s (the
             // pool rotates dead members out on each DNS query); after sync, refresh the IP
@@ -897,13 +998,15 @@ static void liveTask(void *) {
             lockState();
             g_state.wifiPortal = portal;
             g_state.wifiPortalClients = portalBusy ? WiFi.softAPgetStationNum() : 0;
+            g_state.accountMissing = !haveAccount;
+            g_state.wifiPortalManual = portal && g_portalManual;
             if (wifiUp)
                 strncpy(g_state.ip, WiFi.localIP().toString().c_str(), sizeof(g_state.ip) - 1);
             else
                 g_state.ip[0] = 0;
             unlockState();
 
-            if (wifiUp && clockOk && g_haveKey && !g_registered &&
+            if (wifiUp && clockOk && haveAccount && g_haveKey && !g_registered &&
                 (int32_t)(millis() - regRetryAt) >= 0) {
                 // Register the on-device key with the cloud (once), before we can sign in.
                 if (registerClient()) {
@@ -913,12 +1016,34 @@ static void liveTask(void *) {
                     regRetryAt = millis() + REG_RETRY_MS;
                 }
             }
-            if (wifiUp && clockOk && g_registered) {
+            if (wifiUp && clockOk && haveAccount && g_registered) {
                 bool tok = ensureToken();
                 lockState();
                 g_state.signedIn = tok;
                 unlockState();
-                if (tok) {
+
+                // No serial configured (portal left it on auto): list the account's machines
+                // and take the first one. Saved, so this runs once per provisioning.
+                if (tok && g_lmSerial.isEmpty()) {
+                    String body = authedGet(String(LM_BASE) + "/things");
+                    JsonDocument doc;
+                    if (body.length() &&
+                        deserializeJson(doc, body) == DeserializationError::Ok) {
+                        for (JsonObject t : doc.as<JsonArray>()) {
+                            const char *sn = t["serialNumber"] | "";
+                            if (sn[0]) {
+                                g_lmSerial = sn;
+                                accountSave();
+                                LOGF("[live] machine auto-discovered: %s (%s)\n", sn,
+                                     (const char *)(t["name"] | ""));
+                                break;
+                            }
+                        }
+                    }
+                    if (g_lmSerial.isEmpty()) setError("no machine on account");
+                }
+
+                if (tok && g_lmSerial.length()) {
                     // Outbound command (backflush): dispatch once when requested from the UI.
                     bool doBackflush = false;
                     lockState();
@@ -943,9 +1068,12 @@ static void liveTask(void *) {
                             g_wsUp = false;
                             g_wsBackoffUntil = millis() + WS_RETRY_MS;  // don't fight the app
                         }
-                    } else {
+                    } else if ((int32_t)(millis() - nextRestAt) >= 0) {
+                        // Own timer (not the loop delay): the loop spins at 30ms while the
+                        // web portal is up, and that must not become the REST poll rate.
+                        nextRestAt = millis() + (brewing ? 600 : LIVE_POLL_INTERVAL_MS);
                         String payload =
-                            authedGet(String(LM_BASE) + "/things/" + LM_SERIAL + "/dashboard");
+                            authedGet(String(LM_BASE) + "/things/" + g_lmSerial + "/dashboard");
                         if (payload.length()) parseDashboard(payload);
                     }
                     // Stats are slow (two extra requests) — refresh on a timer, never while
@@ -966,14 +1094,17 @@ static void liveTask(void *) {
                 g_state.connMode = 0;
                 unlockState();
                 setError(g_wm.getConfigPortalActive() ? "wifi setup"
-                                                      : (wifiUp ? "clock..." : "wifi..."));
+                         : !wifiUp                    ? "wifi..."
+                         : !clockOk                   ? "clock..."
+                         : !haveAccount               ? "LM account setup"
+                                                      : "signing in...");
             }
         }
-        // Websocket: service frames promptly. REST: fast while brewing, relaxed otherwise.
-        // Portal open: spin fast so g_wm.process() serves the captive UI without lag (at the
-        // 2s cadence every page load and the post-save connect crawled).
+        // Websocket: service frames promptly. REST: fast while brewing, relaxed otherwise
+        // (the REST poll itself is timer-gated above). Any portal up: spin fast so
+        // g_wm.process() serves web pages without lag (at 2s every page load crawled).
         uint32_t d = g_wsUp ? 30 : (brewing ? 600 : LIVE_POLL_INTERVAL_MS);
-        if (g_wm.getConfigPortalActive()) d = 30;
+        if (g_wm.getConfigPortalActive() || g_wm.getWebPortalActive()) d = 30;
         vTaskDelay(pdMS_TO_TICKS(d));
     }
 }
@@ -1031,6 +1162,18 @@ static void liveBegin() {
             wifiListAdd(WIFI_SSID, WIFI_PASSWORD);
     }
 
+    // LM account: NVS first; one-time seed from secrets.h in developer builds.
+    accountLoad();
+    if (g_lmUser.isEmpty() && String(LM_USERNAME).length() &&
+        String(LM_USERNAME) != String("you@example.com")) {
+        g_lmUser = LM_USERNAME;
+        g_lmPass = LM_PASSWORD;
+        g_lmSerial = LM_SERIAL;
+        g_lmTz = LM_TIMEZONE;
+        accountSave();
+        LOGLN("[live] seeded LM account from secrets.h");
+    }
+
     // NTP is started from liveTask once WiFi is up (see startSntp) — NOT here. Starting SNTP
     // with a hostname would leave an async DNS query pending exactly when our first HTTPS
     // connect runs, and Arduino's hostByName() calls dns_clear_cache() on IP-state changes,
@@ -1049,14 +1192,31 @@ static void liveBegin() {
         ok = (g_wifiMulti.run(12000) == WL_CONNECTED);
     }
 
-    // Captive portal fallback (non-blocking; serviced via g_wm.process() in liveTask). While
-    // it's open, liveTask keeps rescanning for known networks and closes it when one appears.
+    // Captive portal (non-blocking; serviced via g_wm.process() in liveTask). Opens when no
+    // known WiFi is reachable OR the LM account is missing — one flow provisions both. While
+    // open, liveTask keeps rescanning for known networks and closes it once setup is complete.
+    g_pUser.setValue(g_lmUser.c_str(), 64);  // prefill for corrections (password never)
+    g_pSerial.setValue(g_lmSerial.c_str(), 24);
+    g_pTz.setValue(g_lmTz.c_str(), 40);
+    g_wm.addParameter(&g_pUser);
+    g_wm.addParameter(&g_pPass);
+    g_wm.addParameter(&g_pSerial);
+    g_wm.addParameter(&g_pTz);
+    g_wm.setSaveParamsCallback(onPortalSaved);  // params-only page save
+    g_wm.setSaveConfigCallback(onPortalSaved);  // WiFi page save (includes the params)
+    // Rename the portal's main button: it configures the machine account too. "custom"
+    // injects our HTML where the stock "Configure WiFi" item would be.
+    g_wm.setCustomMenuHTML(
+        "<form action='/wifi' method='get'><button>Configure WiFi and Machine</button></form>");
+    static const char *portalMenu[] = {"custom", "info", "sep", "update", "exit"};
+    g_wm.setMenu(portalMenu, 5);
     g_wm.setConfigPortalBlocking(false);
     g_wm.setConfigPortalTimeout(0);  // keep the portal open until configured
     g_wm.setConnectTimeout(15);
     g_wm.setHostname("lamarzocco-display");
-    if (!ok) g_wm.startConfigPortal(WIFI_PORTAL_AP);
-    LOGF("[live] wifi %s; portal %s\n", ok ? "connected" : "not yet",
+    if (!ok || g_lmUser.isEmpty()) g_wm.startConfigPortal(WIFI_PORTAL_AP);
+    LOGF("[live] wifi %s; account %s; portal %s\n", ok ? "connected" : "not yet",
+                  g_lmUser.length() ? "set" : "MISSING",
                   g_wm.getConfigPortalActive() ? "OPEN (join " WIFI_PORTAL_AP ")" : "closed");
 
     // (installation key already loaded/generated above)
@@ -1065,17 +1225,12 @@ static void liveBegin() {
     xTaskCreatePinnedToCore(liveTask, "lm_live", 16384, nullptr, 1, nullptr, 0);
     g_liveStarted = true;
 }
-#endif  // HAVE_SECRETS
 
 // ============================ PUBLIC API =====================================
 void lmBegin() {
     g_mutex = xSemaphoreCreateMutex();
     demoReset();
-#ifdef HAVE_SECRETS
     liveBegin();
-#else
-    g_state.networkReady = false;  // no creds compiled in -> LIVE unavailable
-#endif
 }
 
 void lmPoll() {
@@ -1106,13 +1261,11 @@ float lmElapsedSeconds() {
 void lmSetDemo(bool enabled) {
     g_demoEnabled = enabled;
     int total = 0, today = 0, tday = 0;
-#ifdef HAVE_SECRETS
     if (!enabled) {  // read NVS before taking the state lock
         total = g_prefs.getInt("total", 0);
         today = g_prefs.getInt("today", 0);
         tday = g_prefs.getInt("tday", 0);
     }
-#endif
     lockState();
     if (enabled) {
         demoReset();
@@ -1130,34 +1283,32 @@ void lmSetDemo(bool enabled) {
 }
 
 void lmFactoryReset() {
-#ifdef HAVE_SECRETS
     g_wm.resetSettings();          // clear stored WiFi credentials
-    g_prefs.clear();               // clear installation key + shot stats (+ future creds)
-    {
-        Preferences p;             // clear the known-networks list (multi-wifi)
-        p.begin("wifis", false);
+    g_prefs.clear();               // clear installation key + shot stats
+    for (const char *ns : {"wifis", "lmacct"}) {  // known networks + LM account
+        Preferences p;
+        p.begin(ns, false);
         p.clear();
         p.end();
     }
     WiFi.disconnect(true, true);   // erase persisted WiFi config
-#endif
 }
 
 void lmRequestBackflush() {
-    // Queue the command; the background task sends it once signed in. No-op in a demo-only build.
-#ifdef HAVE_SECRETS
+    // Queue the command; the background task sends it once signed in.
     lockState();
     g_backflushRequest = true;
     unlockState();
-#endif
 }
 
 void lmCancelBackflush() {
     // Drop a still-queued command (UI gave up waiting). Without this, a request queued while
     // offline would fire whenever sign-in eventually succeeds — with no UI showing it.
-#ifdef HAVE_SECRETS
     lockState();
     g_backflushRequest = false;
     unlockState();
-#endif
+}
+
+void lmOpenSetupPortal() {
+    g_portalToggleRequest = true;  // handled by liveTask (it owns the WiFiManager)
 }

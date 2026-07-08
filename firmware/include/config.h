@@ -74,6 +74,11 @@
 #define DEV_BTN_B_Y 213
 #define DEV_BTN_C_Y 306
 
+// CANCEL button on the setup screen (shown when the portal was opened from the dev page).
+// Shorter than BTN_H so it fits under the instruction text inside the round panel.
+#define WIFI_CANCEL_Y 350
+#define WIFI_CANCEL_H 56
+
 // Theme settings page: 6 scheme swatches in a 2x3 grid (kept inside the round panel).
 #define THEME_SW_W 150
 #define THEME_SW_H 64

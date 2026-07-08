@@ -11,11 +11,11 @@ screen shows and how to interact with the device. (For build/flash and architect
 | Power on | La Marzocco lion logo (brand red) for ~2s — or the boot-log console if enabled |
 | Machine off / unreachable | Machine illustration + "MACHINE OFF" |
 | Warming up | Machine + steam heat-up rings with countdowns |
-| Idle & ready | Swipe carousel: status / shot stats / backflush / theme / dark-light |
+| Idle & ready | Swipe carousel: status / shot stats / backflush (settings live behind long-press) |
 | Pulling a shot | Pre-infusion phase, then coffee fills bottom→top with centered timer |
 | Just finished | Final shot time held ~15s, then back to standby |
 | 15 min without activity | Screen fully dark (standby) — tap or machine activity wakes it |
-| No known WiFi in range | "WIFI SETUP — join LaMarzocco-Display" (captive portal; the device remembers up to 5 networks and auto-connects to whichever is visible). A status line shows progress: waiting for phone → phone connected → connected! |
+| No known WiFi in range / first boot | "SETUP — join LaMarzocco-Display" (captive portal). Configures WiFi **and** the La Marzocco account (serial auto-detected); the device remembers up to 5 networks and auto-connects to whichever is visible. A status line shows progress: waiting for phone → phone connected → connected! |
 
 ## Screens
 
@@ -63,21 +63,7 @@ live spinner (**STARTING**, then **CLEANING** while the cycle runs), followed by
 screen when the machine reports the cycle finished. When idle, the page shows when the machine was
 last cleaned ("cleaned N days ago").
 
-### 7. Theme settings
-The fourth idle page. Six tappable swatches — one **color scheme per Linea Micra machine color**:
-**RED**, **YELLOW**, **BLUE**, **WHITE**, **GRAY** (covers the Silver Satin / Stainless Steel /
-Satin metal finishes) and **BLACK**. Each swatch is drawn in that scheme's own accent color; the
-active scheme is filled. A scheme restyles the whole UI (background, text, accents, rings, titles)
-and is saved on the device. Status colors are **not** themed — green always means ready, amber
-warming, red error/over-extraction — so readings stay glanceable in every scheme.
-
-### 8. Display settings (dark / light)
-The fifth idle page. Every scheme has a **dark** and a **light** palette; tap **DARK** or
-**LIGHT** to switch (saved). Dark keeps the background pure black, which on an AMOLED means unlit
-pixels — less power and no burn-in — so it's the recommended default. Standby always turns the
-panel fully black regardless of mode.
-
-### 9. Screen standby
+### 7. Screen standby
 After **15 minutes** with no touch and no machine events, the screen goes **fully dark** — on an
 AMOLED that means the pixels are off, which protects the panel from burn-in and extends its life.
 It wakes instantly on **any touch** (the waking tap is swallowed, so it can't accidentally press a
@@ -85,7 +71,7 @@ button) or on **any machine activity**: turning the machine on or off, a brew st
 wakes straight into the shot timer), a boiler reaching ready, a backflush cycle, or the WiFi setup
 portal opening. The timeout is `STANDBY_AFTER_MS` in `config.h`.
 
-### 10. Boot-log console (optional)
+### 8. Boot-log console (optional)
 When the **BOOTLOG** dev toggle is on, every startup skips the logo and instead shows the boot log
 live on screen (display/touch init, WiFi, cloud sign-in, websocket) — handy for debugging
 connection problems without a computer. Long lines wrap; tap anywhere to continue to the normal UI
@@ -98,8 +84,8 @@ The panel is single-touch, so all gestures use one finger.
 | Gesture | Action |
 |---------|--------|
 | **Swipe** | Move between screens (right-to-left = next, like flicking the screen away). Page dots at the bottom show which screen you're on; the carousel loops. |
-| **Press & hold (~1.5s)** | Open **develop mode** (diagnostics + actions). |
-| **Double-tap** | Close develop mode. |
+| **Press & hold (~1.5s)** | Open the **develop/settings area** (diagnostics + all device settings: demo, boot log, rotation, setup portal, reset, theme, dark/light, setup QR). |
+| **Double-tap** | Close the develop/settings area. |
 | **Tap** | Buttons (backflush START/CONFIRM/CANCEL, theme swatches, DARK/LIGHT, dev actions); leave the boot-log console. |
 
 ### Page dots
@@ -110,10 +96,11 @@ a phone photo gallery. The filled dot is the current page.
 A small icon at the top center shows the live data path: a **lightning bolt** (green) for the
 realtime websocket, a **cloud** (muted) for REST polling, nothing when disconnected.
 
-## Develop mode
+## Develop / settings mode
 
-Press and hold the screen for ~1.5 seconds to open develop mode — three pages, swipe between them,
-close with a quick **double-tap**.
+Press and hold the screen for ~1.5 seconds to open the hidden develop/settings area — six pages,
+swipe between them, close with a quick **double-tap**. All device settings live here; the public
+swipe carousel stays purely informational.
 
 **Page 1 — diagnostics** (live values):
 
@@ -127,25 +114,43 @@ close with a quick **double-tap**.
 - **touch** — current touch count (handy to confirm touch works)
 - **err** — last error, or `none`
 
-**Page 2 — actions** (three buttons):
+**Page 2 — demo / debug** (two buttons):
 
 - **DEMO ON/OFF** — toggle demo mode.
 - **BOOTLOG ON/OFF** — persisted toggle for the boot-log console shown on future startups.
-- **RESET DEVICE** — factory reset (confirm modal): clears all remembered WiFi networks, the LM
-  installation key, saved stats, the boot-log toggle, the rotation setting, and the theme (back
-  to RED, dark), then restarts into the captive portal.
 
-**Page 3 — display**:
+**Page 3 — device** (three buttons; current rotation + cable side shown at the top):
 
 - **ROTATE 90** — cycles the screen orientation 0° → 90° → 180° → 270°, applied instantly and
   saved across reboots. Touch input is remapped with it, so buttons and swipes always match what
-  you see — just tap until it looks right for how your device is mounted (the page shows which
-  side the USB cable ends up on).
+  you see — just tap until it looks right for how your device is mounted.
+- **SETUP PORTAL** — opens the WiFi + La Marzocco account setup portal on demand (e.g. to fix a
+  mistyped password without a factory reset). The setup screen then shows a **CANCEL** button to
+  back out without changing anything; it also closes itself after a successful save.
+- **RESET DEVICE** — factory reset (confirm modal): clears all remembered WiFi networks, the LM
+  account, the installation key, saved stats, the boot-log toggle, the rotation setting, and the
+  theme (back to RED, dark), then restarts into the captive portal.
+
+**Page 4 — theme**: six tappable swatches — one **color scheme per Linea Micra machine color**:
+**RED**, **YELLOW**, **BLUE**, **WHITE**, **GRAY** (covers the Silver Satin / Stainless Steel /
+Satin metal finishes) and **BLACK**. Each swatch is drawn in that scheme's own accent color; the
+active scheme is filled. A scheme restyles the whole UI and is saved on the device. Status colors
+are **not** themed — green always means ready, amber warming, red error/over-extraction.
+
+**Page 5 — dark / light**: every scheme has a **dark** and a **light** palette; tap **DARK** or
+**LIGHT** to switch (saved). Dark keeps the background pure black — on an AMOLED that means unlit
+pixels, less power, no burn-in — so it's the recommended default. Standby always turns the panel
+fully black regardless of mode.
+
+**Page 6 — machine setup (QR)**: a QR code linking to `http://<device-ip>/param` — the setup page
+with the La Marzocco account fields — so anyone on the same WiFi can finish or fix the machine
+setup from a phone (e.g. after configuring only WiFi on the captive portal). The device keeps that
+page reachable on the network whenever it's connected. Without WiFi the page says so.
 
 ## Demo mode
 
 The device ships with **demo mode off** (so it shows MACHINE OFF until live data is wired up). Turn
-it **on** from the DEMO button in develop mode to preview the UI:
+it **on** from the DEMO button in the develop/settings area (page 2) to preview the UI:
 
 - In demo mode, the screens become a **manual gallery** of all five screens
   (**Machine off → Heat-up rings → Shot → Stats → Backflush**). Swipe left/right to browse them;

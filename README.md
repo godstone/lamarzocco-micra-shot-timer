@@ -14,10 +14,10 @@ Stylized renders of the on-device screens (round 466×466 panel). Regenerate wit
 | ![Brewing](docs/screenshots/01-brewing.png) | ![Pre-infusion](docs/screenshots/02-preinfusion.png) | ![Over-extraction](docs/screenshots/03-overextraction.png) |
 | **Readiness** | **Shot stats** | **Machine off** |
 | ![Readiness](docs/screenshots/04-readiness.png) | ![Stats](docs/screenshots/05-stats.png) | ![Machine off](docs/screenshots/06-machine-off.png) |
-| **Dev · actions** | **Dev · diagnostics** | **Dev · reset confirm** |
-| ![Dev actions](docs/screenshots/07-dev-actions.png) | ![Dev info](docs/screenshots/08-dev-info.png) | ![Reset confirm](docs/screenshots/09-reset-confirm.png) |
-| **Dev · display** | **Settings · theme** | |
-| ![Dev display](docs/screenshots/10-dev-display.png) | ![Theme settings](docs/screenshots/11-settings-theme.png) | |
+| **Settings · demo/bootlog** | **Settings · diagnostics** | **Settings · reset confirm** |
+| ![Demo and bootlog toggles](docs/screenshots/07-dev-actions.png) | ![Diagnostics](docs/screenshots/08-dev-info.png) | ![Reset confirm](docs/screenshots/09-reset-confirm.png) |
+| **Settings · device** | **Settings · theme** | **Settings · machine setup** |
+| ![Device settings](docs/screenshots/10-dev-display.png) | ![Theme settings](docs/screenshots/11-settings-theme.png) | ![Machine setup QR](docs/screenshots/14-settings-setup.png) |
 
 ## Features
 
@@ -34,17 +34,18 @@ Stylized renders of the on-device screens (round 466×466 panel). Regenerate wit
   appears on the shot screen if you pull before steam is ready.
 - **Color themes** — six schemes matching the Linea Micra machine colors (red, yellow, blue,
   white, gray for the metallic finishes, black), each with a dark and a light palette. Pick the
-  scheme and dark/light mode right on the device (two settings pages in the swipe carousel;
-  persisted). Status colors keep fixed meanings in every scheme: green = ready, amber = warming,
-  red = error/over-extraction.
+  scheme and dark/light mode right on the device (settings pages in the hidden long-press
+  settings area; persisted). Status colors keep fixed meanings in every scheme: green = ready,
+  amber = warming, red = error/over-extraction.
 - **Shot stats** — shots today (hero + crema dots) and lifetime total (from the cloud counters).
 - **Backflush page** — start the machine's backflush cleaning cycle from the display (confirm
   modal, live CLEANING spinner from the cloud status, DONE screen, "cleaned N days ago").
 - **Machine-off screen** — machine illustration + "MACHINE OFF" when off/unreachable.
-- **Touch UI** — swipe carousel with gallery page dots and a connection icon (lightning =
-  websocket, cloud = REST); a hidden **develop mode** (press-and-hold) with live diagnostics
-  (wifi/ip/signin/cloud/status/heap/touch), an actions page (demo / boot log / factory reset),
-  and a display page (screen rotation, persisted — touch remaps automatically).
+- **Touch UI** — swipe carousel (status / stats / backflush) with gallery page dots and a
+  connection icon (lightning = websocket, cloud = REST); a hidden **develop/settings area**
+  (press-and-hold) with six pages: live diagnostics (wifi/ip/signin/cloud/status/heap/touch),
+  demo + boot-log toggles, device actions (rotation / setup portal / factory reset), theme,
+  dark/light, and the machine-setup QR page.
 - **Boot-log console** — a persisted dev toggle that mirrors the startup log (WiFi, sign-in,
   websocket) to the display, for debugging connection issues without a computer.
 - **Screen standby** — after 15 min with no touch and no machine events the AMOLED goes fully
@@ -84,6 +85,27 @@ capacitive touch controller. Pin map: `firmware/include/pin_config.h`. (The sist
 
 ## Quick start
 
+### Option A — phone-only setup (no secrets needed)
+
+Build & flash the plain firmware ([PlatformIO](https://platformio.org/) core ≥ 6.1.19):
+
+```bash
+cd firmware
+pio run -t upload
+```
+
+On first boot the display opens the **setup portal**: join the `LaMarzocco-Display` WiFi from
+your phone and enter your WiFi **and** your La Marzocco account (e-mail + password; serial is
+auto-detected from your account, timezone optional). The device generates and registers its own
+cloud key — no computer needed beyond the initial flash. To change credentials later, scan the
+QR code on the **machine-setup page** (long-press settings area) to open `http://<device-ip>/param` from
+any phone on the same network, or use the **SETUP PORTAL** button on dev page 3.
+
+> The LM password is stored on the device (NVS, plaintext) and entered over the portal's open
+> access point — the same trust level as your WiFi credentials.
+
+### Option B — developer setup (compile-time seed)
+
 1. **Pre-flight (validate cloud + make the installation key):**
    ```bash
    cd tools/preflight
@@ -96,17 +118,13 @@ capacitive touch controller. Pin map: `firmware/include/pin_config.h`. (The sist
    ```bash
    python3 tools/gen_secrets.py     # writes firmware/include/secrets.h (git-ignored)
    ```
-3. **Build & flash** ([PlatformIO](https://platformio.org/) core ≥ 6.1.19):
-   ```bash
-   cd firmware
-   pio run -t upload
-   ```
-   The project pins the **pioarduino** platform fork (Arduino core 3.x); the official `espressif32`
-   platform is stale. If upload can't find the board: hold **BOOT**, tap **RST**, release **BOOT**.
-   On Python 3.14 systems, run PlatformIO from a 3.12 environment (its bootstrap needs ≤ 3.13).
+3. **Build & flash** as above. `secrets.h` seeds the WiFi + account settings on first boot
+   (after that, everything is runtime state, changeable from the portal).
 
-Without `secrets.h` (or with placeholder WiFi) the device runs in **demo mode** so you can see every
-screen with no machine.
+Build notes: the project pins the **pioarduino** platform fork (Arduino core 3.x); the official
+`espressif32` platform is stale. If upload can't find the board: hold **BOOT**, tap **RST**,
+release **BOOT**. On Python 3.14 systems, run PlatformIO from a 3.12 environment (its bootstrap
+needs ≤ 3.13). Demo mode (dev page 2) previews every screen without a machine.
 
 ## Repository layout
 

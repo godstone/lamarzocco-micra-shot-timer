@@ -14,8 +14,10 @@ static Mode g_mode = MODE_IDLE;
 static float g_lastElapsed = 0;  // captured at the moment brewing stops
 static uint32_t g_frozenAt = 0;  // millis() when the shot ended
 
-// Develop mode: toggled by a two-finger touch; shows a diagnostics overlay.
-#define DEV_PAGES 3  // 0 = diagnostics, 1 = actions, 2 = display (rotation)
+// Develop/settings mode: opened by long-press. Diagnostics + all device settings live here
+// (the public swipe carousel stays purely informational).
+#define DEV_PAGES 6  // 0 = diagnostics, 1 = demo/bootlog, 2 = device (rotate/setup/reset),
+                     // 3 = theme, 4 = dark/light, 5 = machine-setup QR
 static bool g_dev = false;
 static int g_devPage = 0;
 static bool g_confirmReset = false;  // reset-confirmation modal shown
@@ -25,8 +27,7 @@ static uint32_t g_lastDevRender = 0;
 static bool inRect(int x, int y, int rx, int ry, int rw, int rh) {
     return x >= rx && x <= rx + rw && y >= ry && y <= ry + rh;
 }
-// swipe carousel: 0 = status (off/readiness), 1 = stats, 2 = backflush, 3 = theme, 4 = dark/light
-#define IDLE_PAGES 5
+#define IDLE_PAGES 3  // swipe carousel: 0 = status (off/readiness), 1 = stats, 2 = backflush
 
 static int g_idleScreen = -1;  // last rendered screen id; -1 forces redraw
 static long g_idleData = -1;
@@ -106,11 +107,12 @@ static void renderIdle() {
     // line tracks progress: phone joined the portal AP / WiFi connected (about to close).
     if (s.wifiPortal) {
         int phase = s.networkReady || s.ip[0] ? 2 : (s.wifiPortalClients > 0 ? 1 : 0);
-        if (g_idleScreen != 9 || g_idleData != phase) {
+        long key = phase * 4 + (s.accountMissing ? 2 : 0) + (s.wifiPortalManual ? 1 : 0);
+        if (g_idleScreen != 9 || g_idleData != key) {
             displaySetPageIndicator(0, 0);
-            displayWifiSetup(phase);
+            displayWifiSetup(phase, s.accountMissing, s.wifiPortalManual);
             g_idleScreen = 9;
-            g_idleData = phase;
+            g_idleData = key;
         }
         return;
     }
@@ -147,7 +149,7 @@ static void renderIdle() {
             g_idleScreen = 3;
             g_idleData = key;
         }
-    } else if (g_idlePage == 2) {  // backflush / cleaning page
+    } else {  // backflush / cleaning page
         bool running = (g_bfUi == 2 || s.backflushStatus != 0);
         if (running) {  // animate the spinner
             if (now - g_idleLastRender >= 120) {
@@ -163,20 +165,6 @@ static void renderIdle() {
                 g_idleScreen = 4;
                 g_idleData = key;
             }
-        }
-    } else if (g_idlePage == 3) {  // theme settings (scheme swatches)
-        long key = (long)displayScheme() * 2 + (displayDarkMode() ? 1 : 0);
-        if (g_idleScreen != 5 || g_idleData != key) {
-            displaySettingsTheme();
-            g_idleScreen = 5;
-            g_idleData = key;
-        }
-    } else {  // display settings (dark / light)
-        long key = displayDarkMode() ? 1 : 0;
-        if (g_idleScreen != 6 || g_idleData != key) {
-            displaySettingsMode();
-            g_idleScreen = 6;
-            g_idleData = key;
         }
     }
 }
@@ -393,10 +381,9 @@ void loop() {
                 g_devRedraw = true;
             }
             tapConsumed = true;  // modal swallows all taps (no accidental close)
-        } else if (g_devPage == 1) {  // three stacked buttons: DEMO / BOOTLOG / RESET
+        } else if (g_devPage == 1) {  // dev/demo page: DEMO / BOOTLOG
             bool a = inRect(tx, ty, BTN_X - M, DEV_BTN_A_Y - M, BTN_W + 2 * M, BTN_H + 2 * M);
             bool b = inRect(tx, ty, BTN_X - M, DEV_BTN_B_Y - M, BTN_W + 2 * M, BTN_H + 2 * M);
-            bool c = inRect(tx, ty, BTN_X - M, DEV_BTN_C_Y - M, BTN_W + 2 * M, BTN_H + 2 * M);
             if (a) {  // DEMO toggle
                 lmSetDemo(!lmDemo());
                 g_devRedraw = true;
@@ -405,18 +392,57 @@ void loop() {
                 bootlogSetEnabled(!bootlogEnabled());
                 g_devRedraw = true;
                 tapConsumed = true;
+            }
+        } else if (g_devPage == 2) {  // device page: ROTATE / SETUP PORTAL / RESET
+            bool a = inRect(tx, ty, BTN_X - M, DEV_BTN_A_Y - M, BTN_W + 2 * M, BTN_H + 2 * M);
+            bool b = inRect(tx, ty, BTN_X - M, DEV_BTN_B_Y - M, BTN_W + 2 * M, BTN_H + 2 * M);
+            bool c = inRect(tx, ty, BTN_X - M, DEV_BTN_C_Y - M, BTN_W + 2 * M, BTN_H + 2 * M);
+            if (a) {
+                displaySetRotation((displayRotation() + 1) & 3);  // touch follows automatically
+                g_devRedraw = true;
+                tapConsumed = true;
+            } else if (b) {  // toggle the WiFi + LM account setup portal
+                lmOpenSetupPortal();
+                g_dev = false;  // leave dev mode so the setup screen is visible
+                repaintCurrent();
+                tapConsumed = true;
             } else if (c) {  // RESET -> confirm
                 g_confirmReset = true;
                 g_devRedraw = true;
                 tapConsumed = true;
             }
-        } else if (g_devPage == 2) {  // display page: ROTATE cycles the orientation
-            bool b = inRect(tx, ty, BTN_X - M, DEV_BTN_B_Y - M, BTN_W + 2 * M, BTN_H + 2 * M);
-            if (b) {
-                displaySetRotation((displayRotation() + 1) & 3);  // touch follows automatically
+        } else if (g_devPage == 3) {  // theme settings: 2x3 swatch grid -> pick a scheme
+            static const int xs[2] = {THEME_SW_X0, THEME_SW_X1};
+            static const int ys[3] = {THEME_SW_Y0, THEME_SW_Y1, THEME_SW_Y2};
+            for (int i = 0; i < THEME_SCHEMES; i++) {
+                if (inRect(tx, ty, xs[i % 2] - M, ys[i / 2] - M, THEME_SW_W + 2 * M,
+                           THEME_SW_H + 2 * M)) {
+                    displaySetScheme(i);
+                    g_devRedraw = true;
+                    tapConsumed = true;
+                    break;
+                }
+            }
+        } else if (g_devPage == 4) {  // display settings: DARK / LIGHT
+            bool a = inRect(tx, ty, BTN_X - M, BTN_A_Y - M, BTN_W + 2 * M, BTN_H + 2 * M);
+            bool b = inRect(tx, ty, BTN_X - M, BTN_B_Y - M, BTN_W + 2 * M, BTN_H + 2 * M);
+            if (a || b) {
+                displaySetDarkMode(a);
                 g_devRedraw = true;
                 tapConsumed = true;
             }
+        }
+    }
+
+    // Setup-screen CANCEL (portal opened from the dev page): back out without changing
+    // anything. Consumes the tap first — the portal screen overlays every idle page.
+    if (rising && !g_dev && !tapConsumed && lmState().wifiPortal && lmState().wifiPortalManual) {
+        const int M = 12;
+        if (inRect(tx, ty, BTN_X - M, WIFI_CANCEL_Y - M, BTN_W + 2 * M,
+                   WIFI_CANCEL_H + 2 * M)) {
+            lmOpenSetupPortal();  // toggle -> closes the portal
+            g_idleScreen = -1;
+            tapConsumed = true;
         }
     }
 
@@ -443,34 +469,6 @@ void loop() {
                 g_idleScreen = -1;
                 tapConsumed = true;
             }
-        }
-    }
-
-    // Theme settings taps (real idle, page 3): 2x3 swatch grid -> pick a scheme.
-    if (rising && !g_dev && !lmDemo() && g_idlePage == 3 && !tapConsumed) {
-        const int M = 12;
-        static const int xs[2] = {THEME_SW_X0, THEME_SW_X1};
-        static const int ys[3] = {THEME_SW_Y0, THEME_SW_Y1, THEME_SW_Y2};
-        for (int i = 0; i < THEME_SCHEMES; i++) {
-            if (inRect(tx, ty, xs[i % 2] - M, ys[i / 2] - M, THEME_SW_W + 2 * M,
-                       THEME_SW_H + 2 * M)) {
-                displaySetScheme(i);
-                g_idleScreen = -1;
-                tapConsumed = true;
-                break;
-            }
-        }
-    }
-
-    // Display-mode settings taps (real idle, page 4): DARK / LIGHT buttons.
-    if (rising && !g_dev && !lmDemo() && g_idlePage == 4 && !tapConsumed) {
-        const int M = 12;
-        bool a = inRect(tx, ty, BTN_X - M, BTN_A_Y - M, BTN_W + 2 * M, BTN_H + 2 * M);
-        bool b = inRect(tx, ty, BTN_X - M, BTN_B_Y - M, BTN_W + 2 * M, BTN_H + 2 * M);
-        if (a || b) {
-            displaySetDarkMode(a);
-            g_idleScreen = -1;
-            tapConsumed = true;
         }
     }
 
@@ -512,6 +510,12 @@ void loop() {
                 displayDevActions(lmDemo(), bootlogEnabled());
             else if (g_devPage == 2)
                 displayDevDisplay(displayRotation());
+            else if (g_devPage == 3)
+                displaySettingsTheme();
+            else if (g_devPage == 4)
+                displaySettingsMode();
+            else if (g_devPage == 5)
+                displaySettingsSetup(lmState().ip);
             else
                 displayDevInfo(lmState(), down ? 1 : 0, lmDemo());
             g_lastDevRender = now;

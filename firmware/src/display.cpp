@@ -4,6 +4,8 @@
 #include <Arduino_GFX_Library.h>
 #include <Preferences.h>
 
+#include "qrcode.h"  // ricmoo/QRCode (machine-setup QR on the settings page)
+
 #include "bootlog.h"
 #include "config.h"
 #include "log.h"
@@ -364,21 +366,24 @@ void displayMachineOff() {
     canvas->flush();
 }
 
-void displayWifiSetup(int phase) {
+void displayWifiSetup(int phase, bool needAccount, bool cancelable) {
     int cy = canvas->height() / 2;
     canvas->fillScreen(COL_BG);
     canvas->drawCircle(canvas->width() / 2, cy, canvas->width() / 2 - 4, COL_ACCENT2);
-    drawCenteredClassic("WIFI SETUP", cy - 70, 3, COL_ACCENT);
+    drawCenteredClassic(needAccount ? "SETUP" : "WIFI SETUP", cy - 70, 3, COL_ACCENT);
     drawCenteredClassic("on your phone, join wifi:", cy - 16, 2, COL_DIM);
     drawCenteredClassic("LaMarzocco-Display", cy + 18, 2, COL_FG);
-    drawCenteredClassic("then pick your network", cy + 64, 2, COL_DIM);
+    drawCenteredClassic(needAccount ? "set wifi + LM sign-in" : "then pick your network",
+                        cy + 64, 2, COL_DIM);
     // Live status so the user sees the device reacting (joined phone, successful connect).
+    int statusY = cancelable ? cy + 104 : cy + 118;  // higher when CANCEL needs the space
     if (phase == 2)
-        drawCenteredClassic("connected!", cy + 118, 2, COL_OK);
+        drawCenteredClassic("connected!", statusY, 2, COL_OK);
     else if (phase == 1)
-        drawCenteredClassic("phone connected...", cy + 118, 2, COL_OK);
+        drawCenteredClassic("phone connected...", statusY, 2, COL_OK);
     else
-        drawCenteredClassic("waiting for phone...", cy + 118, 2, COL_DIM);
+        drawCenteredClassic("waiting for phone...", statusY, 2, COL_DIM);
+    if (cancelable) drawButton(BTN_X, WIFI_CANCEL_Y, BTN_W, WIFI_CANCEL_H, "CANCEL", COL_FG);
     canvas->flush();
 }
 
@@ -504,7 +509,6 @@ void displayDevActions(bool demoEnabled, bool bootlogOn) {
                demoEnabled ? COL_OK : COL_DIM);
     drawButton(BTN_X, DEV_BTN_B_Y, BTN_W, BTN_H, bootlogOn ? "BOOTLOG ON" : "BOOTLOG OFF",
                bootlogOn ? COL_OK : COL_DIM);
-    drawButton(BTN_X, DEV_BTN_C_Y, BTN_W, BTN_H, "RESET DEVICE", COL_WARN);
     drawPageDots();
     canvas->flush();
 }
@@ -513,13 +517,12 @@ void displayDevDisplay(int rotation) {
     canvas->fillScreen(COL_BG);
     drawCentered("DEV", 64, &LuckiestGuy36pt7b, COL_ACCENT);
     static const char *cable[] = {"left", "bottom", "right", "top"};
-    char b[28];
-    snprintf(b, sizeof(b), "rotation: %d", (rotation & 3) * 90);
-    drawCenteredClassic(b, 150, 2, COL_FG);
-    snprintf(b, sizeof(b), "usb cable: %s", cable[rotation & 3]);
-    drawCenteredClassic(b, 178, 2, COL_DIM);
-    drawButton(BTN_X, DEV_BTN_B_Y, BTN_W, BTN_H, "ROTATE 90", COL_ACCENT2);
-    drawCenteredClassic("tap until it looks right", 320, 2, COL_DIM);
+    char b[36];
+    snprintf(b, sizeof(b), "%d deg - cable %s", (rotation & 3) * 90, cable[rotation & 3]);
+    drawCenteredClassic(b, 108, 2, COL_DIM);
+    drawButton(BTN_X, DEV_BTN_A_Y, BTN_W, BTN_H, "ROTATE 90", COL_ACCENT2);
+    drawButton(BTN_X, DEV_BTN_B_Y, BTN_W, BTN_H, "SETUP PORTAL", COL_WARN);
+    drawButton(BTN_X, DEV_BTN_C_Y, BTN_W, BTN_H, "RESET DEVICE", COL_ERR);
     drawPageDots();
     canvas->flush();
 }
@@ -566,6 +569,38 @@ void displaySettingsMode() {
     else
         drawButton(BTN_X, BTN_B_Y, BTN_W, BTN_H, "LIGHT", COL_DIM);
     drawCenteredClassic("dark saves power (AMOLED)", 372, 2, COL_DIM);
+    drawPageDots();
+    canvas->flush();
+}
+
+// Settings: machine-setup QR code. Encodes http://<ip>/param — the WiFiManager page with the
+// LM account fields — so a phone on the same network can finish/fix the setup. Drawn black on
+// a white card regardless of theme (QR scanners want dark-on-light).
+void displaySettingsSetup(const char *ip) {
+    canvas->fillScreen(COL_BG);
+    drawCentered("SETUP", 88, &LuckiestGuy36pt7b, COL_ACCENT);
+    if (!ip || !ip[0]) {
+        drawCenteredClassic("no wifi connection", 220, 2, COL_DIM);
+        drawCenteredClassic("connect wifi first", 250, 2, COL_DIM);
+    } else {
+        char url[40];
+        snprintf(url, sizeof(url), "http://%s/param", ip);
+        QRCode qr;
+        uint8_t buf[qrcode_getBufferSize(3)];
+        if (qrcode_initText(&qr, buf, 3, ECC_MEDIUM, url) == 0) {
+            const int scale = 6, quiet = 3 * scale;
+            int size = qr.size * scale;  // v3 = 29 modules -> 174 px
+            int x0 = (canvas->width() - size) / 2, y0 = 150;
+            canvas->fillRect(x0 - quiet, y0 - quiet, size + 2 * quiet, size + 2 * quiet,
+                             0xFFFF);
+            for (int y = 0; y < qr.size; y++)
+                for (int x = 0; x < qr.size; x++)
+                    if (qrcode_getModule(&qr, x, y))
+                        canvas->fillRect(x0 + x * scale, y0 + y * scale, scale, scale, 0x0000);
+        }
+        drawCenteredClassic(url, 372, 2, COL_FG);
+        drawCenteredClassic("scan to set up the machine", 400, 2, COL_DIM);
+    }
     drawPageDots();
     canvas->flush();
 }

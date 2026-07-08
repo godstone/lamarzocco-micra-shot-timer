@@ -29,3 +29,7 @@ void lmRequestBackflush();
 
 // Drop a queued-but-unsent backflush command (call when the UI stops waiting for it).
 void lmCancelBackflush();
+
+// Toggle the setup portal (WiFi + LM account) from the dev screen, e.g. to fix a typo'd
+// password without a factory reset. Opens if closed, closes if it was opened this way.
+void lmOpenSetupPortal();

@@ -67,7 +67,14 @@ void displayMachineOff();
 // WiFi captive-portal setup prompt (shown while the portal is open), with a live status
 // line so the user sees progress. phase: 0 = waiting for a phone to join the portal AP,
 // 1 = phone joined (configuring), 2 = WiFi connected (portal about to close).
-void displayWifiSetup(int phase);
+// needAccount: the LM account is not saved yet — hint that the portal also wants sign-in.
+// cancelable: portal was opened from the dev page — show a CANCEL button (WIFI_CANCEL_Y)
+// so the user can back out without changing anything.
+void displayWifiSetup(int phase, bool needAccount, bool cancelable);
+
+// Settings page: QR code linking to http://<ip>/param (finish/fix the machine setup from a
+// phone on the same network). Shows a hint instead when there is no WiFi connection.
+void displaySettingsSetup(const char *ip);
 
 // Fancy idle stats: shots today (hero) + lifetime total.
 void displayStats(int shotsToday, int shotsTotal);

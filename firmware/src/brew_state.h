@@ -14,6 +14,8 @@ struct BrewState {
     bool signedIn = false;      // cloud token valid (dev screen)
     bool wifiPortal = false;    // WiFiManager captive portal currently open
     uint8_t wifiPortalClients = 0;  // phones joined to the portal AP (setup-screen feedback)
+    bool accountMissing = false;    // no LM account saved yet (portal shows sign-in fields)
+    bool wifiPortalManual = false;  // portal opened via the dev button (show CANCEL to back out)
 
     // Boiler readiness (shown on the idle/standby screen).
     bool coffeeReady = false;      // coffee boiler at temperature
